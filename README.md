@@ -1,5 +1,9 @@
 # Janus 🏺
 
+[![Janus CI](https://github.com/goldenphoenix713/janus/actions/workflows/ci.yml/badge.svg)](https://github.com/goldenphoenix713/janus/actions/workflows/ci.yml)
+[![License: MIT/Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/release/python-3120/)
+
 > **The Extensible Multiverse Engine for Python Objects.**
 
 Janus provides a Git-like API for branching, switching, and flattening the state of complex Python objects, powered by a lightning-fast Rust backend (**Tachyon-RS**). No deep-copying, no manual history tracking, and near-zero performance penalties.
@@ -54,4 +58,4 @@ Under the hood, Janus offloads all state delta logic to **Tachyon-RS**, a specia
 
 ## License
 
-Janus is distributed under the terms of both the [MIT license](LICENSE-MIT) and the [Apache License (Version 2.0)](LICENSE-APACHE). See [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE) for details.
+Janus is distributed under the terms of both the [MIT license](LICENSE-MIT) and the [Apache License (Version 2.0)](LICENSE-APACHE).
