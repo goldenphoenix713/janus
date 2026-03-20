@@ -54,4 +54,4 @@ Under the hood, Janus offloads all state delta logic to **Tachyon-RS**, a specia
 
 ## License
 
-Janus is distributed under the terms of both the MIT license and the Apache License (Version 2.0). See LICENSE-MIT and LICENSE-APACHE for details.
+Janus is distributed under the terms of both the [MIT license](LICENSE-MIT) and the [Apache License (Version 2.0)](LICENSE-APACHE). See [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE) for details.

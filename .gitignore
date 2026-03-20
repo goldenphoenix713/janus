@@ -36,7 +36,6 @@ env/
 htmlcov/
 .hypothesis/
 .pdm-python
-uv.lock
 
 # --- Rust ---
 target/

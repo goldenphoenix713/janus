@@ -1,4 +1,4 @@
-name: OmniState CI
+name: Janus CI
 
 on:
   push:
@@ -6,47 +6,37 @@ on:
   pull_request:
     branches: [ "main" ]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   test:
     name: Build and Test
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Check out the repository code
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Install Rust
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
 
-      # 3. Install uv and Python
-      # The setup-uv action handles downloading uv, caching, and installing Python natively.
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          python-version: "3.11"
+          python-version: "3.12"
 
-      # 4. Install Dependencies
-      # We use `uv pip install` here instead of `uv add` because CI/CD environments
-      # should be read-only and not modify your pyproject.toml file.
       - name: Install Python Dependencies
-        run: |
-          uv venv
-          uv pip install maturin pytest
+        run: uv sync
 
-      # 5. Rust Linting (Optional but highly recommended)
       - name: Run Cargo Clippy
         run: cargo clippy -- -D warnings
 
-      # 6. Compile the Rust extension into the Python environment
-      - name: Build OmniState (Maturin)
-        # uv run automatically detects and uses the .venv we just created
+      - name: Build Janus (Maturin)
         run: uv run maturin develop
 
-      # 7. Run the Python test suite
       - name: Run PyTest
         run: uv run pytest tests/ -v
