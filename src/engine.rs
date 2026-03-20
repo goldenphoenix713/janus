@@ -15,9 +15,11 @@ pub enum Operation {
 // Foundation for Timeline Extraction: Nodes know their parents.
 #[derive(Clone)]
 pub struct StateNode {
+    #[allow(dead_code)]
     pub id: usize,
     pub parents: Vec<usize>,
     pub deltas: Vec<Operation>,
+    #[allow(dead_code)]
     pub metadata: HashMap<String, PyObject>,
 }
 
@@ -230,7 +232,7 @@ impl TachyonEngine {
         }
 
         let path_up: Vec<usize> = from_path[lca_idx + 1..].iter().rev().cloned().collect();
-        let path_down: Vec<usize> = to_path[lca_idx + 1..].iter().cloned().collect();
+        let path_down: Vec<usize> = to_path[lca_idx + 1..].to_vec();
 
         (path_up, path_down)
     }
@@ -282,12 +284,10 @@ impl TachyonEngine {
                     if let Ok(dict_attr) = owner.getattr(path.as_str()) {
                         if forward {
                             dict_attr.call_method1("__setitem__", (key, new_value))?;
+                        } else if old_value.is_none(py) {
+                            dict_attr.call_method1("__delitem__", (key,))?;
                         } else {
-                            if old_value.is_none(py) {
-                                dict_attr.call_method1("__delitem__", (key,))?;
-                            } else {
-                                dict_attr.call_method1("__setitem__", (key, old_value))?;
-                            }
+                            dict_attr.call_method1("__setitem__", (key, old_value))?;
                         }
                     }
                 }
