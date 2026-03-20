@@ -16,7 +16,7 @@ pub enum Operation {
 #[derive(Clone)]
 pub struct StateNode {
     pub id: usize,
-    pub parents: Vec<usize>, 
+    pub parents: Vec<usize>,
     pub deltas: Vec<Operation>,
     pub metadata: HashMap<String, PyObject>,
 }
@@ -87,14 +87,14 @@ impl TachyonEngine {
             owner.setattr("_restoring", true)?;
 
             let (path_up, path_down) = self.get_shortest_path(self.current_node, target_node_id);
-            
+
             // 1. Move UP to LCA (apply backwards)
             for node_id in path_up {
                 if let Some(node) = self.nodes.get(&node_id) {
                     self.apply_node_deltas(py, node, false)?;
                 }
             }
-            
+
             // 2. Move DOWN to target (apply forwards)
             for node_id in path_down {
                 if let Some(node) = self.nodes.get(&node_id) {
@@ -335,7 +335,7 @@ impl TrackedList {
             Some(i) => (if i < 0 { self.inner.len() as isize + i } else { i }) as usize,
             None => self.inner.len() - 1,
         };
-        
+
         if idx >= self.inner.len() {
             return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>("pop index out of range"));
         }
@@ -373,7 +373,7 @@ impl TrackedDict {
     pub fn __setitem__(&mut self, py: Python, key: String, value: PyObject) -> PyResult<()> {
         let old_value = self.inner.get(&key).cloned().unwrap_or_else(|| py.None());
         self.inner.insert(key.clone(), value.clone());
-        
+
         if let Ok(mut engine) = self.engine.try_borrow_mut(py) {
             engine.log_dict_update(self.name.clone(), key.into_py(py), old_value, value);
         }

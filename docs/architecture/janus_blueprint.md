@@ -22,18 +22,18 @@
 
 ```text
 janus/
-├── Cargo.toml                
-├── pyproject.toml            
-├── README.md                 
-├── src/                      
-│   ├── lib.rs                
+├── Cargo.toml
+├── pyproject.toml
+├── README.md
+├── src/
+│   ├── lib.rs
 │   ├── engine.rs             # DAG-based Tachyon Multiverse logic & Timeline extraction
-│   └── containers.rs         
-├── janus/                    
-│   ├── __init__.py           
+│   └── containers.rs
+├── janus/
+│   ├── __init__.py
 │   ├── decorators.py         # mode-aware @janus decorator
 │   └── registry.py           # Plugin AdapterRegistry for 3rd-party types
-└── tests/                    
+└── tests/
     ├── __init__.py
     ├── test_multiverse.py    # E2E branching and switching tests
     └── test_plugins.py       # Tests for custom adapter registration
@@ -113,9 +113,9 @@ pub struct StateNode {
 
 #[pyclass]
 pub struct TachyonEngine {
-    owner: Py<PyAny>, 
+    owner: Py<PyAny>,
     nodes: HashMap<usize, StateNode>,
-    branches: HashMap<String, usize>, 
+    branches: HashMap<String, usize>,
     current_node: usize,
     next_node_id: usize,
     mode: String, // "linear" or "multiversal"
@@ -127,18 +127,18 @@ impl TachyonEngine {
     pub fn new(owner: Py<PyAny>, mode: String) -> Self {
         let mut branches = HashMap::new();
         branches.insert("main".to_string(), 0);
-        
+
         let mut nodes = HashMap::new();
         nodes.insert(0, StateNode { id: 0, parent_id: None, deltas: Vec::new() });
 
-        TachyonEngine { 
+        TachyonEngine {
             owner, nodes, branches,
             current_node: 0, next_node_id: 1, mode
         }
     }
 
     pub fn log_op(&mut self, op: Operation) {
-        // Creates a new node and edge. 
+        // Creates a new node and edge.
         // If mode == "linear", it overwrites future nodes if we went back in time.
         let new_node = StateNode {
             id: self.next_node_id,
@@ -156,7 +156,7 @@ impl TachyonEngine {
         // (Implementation stubbed for blueprint)
         Ok(Vec::new())
     }
-    
+
     // ... create_branch, switch_branch, and apply_inverse omitted for brevity ...
 }
 ```
@@ -195,11 +195,11 @@ def janus(mode="multiversal"):
     def decorator(cls):
         orig_init = cls.__init__
         orig_setattr = cls.__setattr__
-        
+
         def __init__(self, *args, **kwargs):
             object.__setattr__(self, '_engine', TachyonEngine(self, mode))
             orig_init(self, *args, **kwargs)
-            
+
         def __setattr__(self, name, value):
             if name == '_engine':
                 return object.__setattr__(self, name, value)
@@ -208,20 +208,20 @@ def janus(mode="multiversal"):
             value_type = type(value)
             if value_type in ADAPTER_REGISTRY:
                 # Let the adapter calculate the blob, pass to rust via PluginOp
-                pass 
+                pass
             elif isinstance(value, list):
                 value = TrackedList(value, self._engine, name)
-                
+
             orig_setattr(self, name, value)
 
         def branch(self, label: str):
             if mode == "linear":
                 raise ValueError("Branching is disabled in linear mode.")
             self._engine.create_branch(label)
-            
+
         def switch(self, label: str):
             self._engine.switch_branch(label)
-            
+
         def extract_timeline(self, label: str):
             return self._engine.extract_timeline(label)
 
@@ -258,7 +258,7 @@ Execute the following shell commands sequentially:
 Janus provides a Git-like API for branching, switching, and flattening the state of complex Python objects, powered by a lightning-fast Rust backend (**Tachyon-RS**).
 
 ### 🚀 Tiered Complexity
-Choose the right tool for the job. Use `mode="linear"` for high-speed, standard undo/redo, or opt into `mode="multiversal"` to enable parallel state branching and graph traversal. 
+Choose the right tool for the job. Use `mode="linear"` for high-speed, standard undo/redo, or opt into `mode="multiversal"` to enable parallel state branching and graph traversal.
 
 ### 🔌 Extensible Plugin Registry
 Need to track a `pandas.DataFrame` or a complex custom object? Register a `JanusAdapter` and let Tachyon-RS safely manage the state blobs without slowing down the core engine.

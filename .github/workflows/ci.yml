@@ -28,10 +28,10 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          python-version: "3.11" 
+          python-version: "3.11"
 
       # 4. Install Dependencies
-      # We use `uv pip install` here instead of `uv add` because CI/CD environments 
+      # We use `uv pip install` here instead of `uv add` because CI/CD environments
       # should be read-only and not modify your pyproject.toml file.
       - name: Install Python Dependencies
         run: |

@@ -2,17 +2,37 @@
 
 > **The Extensible Multiverse Engine for Python Objects.**
 
-Janus provides a Git-like API for branching, switching, and flattening the state of complex Python objects, powered by a lightning-fast Rust backend (**Tachyon-RS**).
+Janus provides a Git-like API for branching, switching, and flattening the state of complex Python objects, powered by a lightning-fast Rust backend (**Tachyon-RS**). No deep-copying, no manual history tracking, and near-zero performance penalties.
 
-## 🚀 Tiered Complexity
+## 🚀 Getting Started
 
-Choose the right tool for the job. Use `mode="linear"` for high-speed, standard undo/redo, or opt into `mode="multiversal"` to enable parallel state branching and graph traversal.
+Janus allows you to opt-in to complexity. Start with a simple linear history or dive into multiversal branching.
 
-## 🔌 Extensible Plugin Registry
+```python
+from janus import janus
 
-Need to track a `pandas.DataFrame` or a complex custom object? Register a `JanusAdapter` and let Tachyon-RS safely manage the state blobs without slowing down the core engine.
+@janus(mode="multiversal")
+class Simulation:
+    def __init__(self):
+        self.points = [1, 2, 3]
 
----
+sim = Simulation()
+sim.branch("stable")
+
+# Perform mutations
+sim.points.append(999)
+print(sim.points) # [1, 2, 3, 999]
+
+# Multiversal rollback via Tachyon-RS
+sim.switch("stable")
+print(sim.points) # [1, 2, 3]
+```
+
+## 🏗️ Architectural Pillars
+
+1. **Tiered Complexity**: Use `mode="linear"` for high-speed undo/redo, or `mode="multiversal"` for Git-like branching and merging.
+2. **Extensible Plugin Registry**: Register a `JanusAdapter` to track `pandas.DataFrames`, `torch.Tensors`, or any custom object without slowing down the core engine.
+3. **Timeline Extraction**: Flatten complex multiversal paths into linear audit sequences for visualization and debugging.
 
 ## 🚀 Use Cases
 
@@ -30,7 +50,7 @@ Need to track a `pandas.DataFrame` or a complex custom object? Register a `Janus
 
 ## ⚡ Powered by Tachyon-RS
 
-Under the hood, Janus offloads all state delta logic to **Tachyon-RS**, a specialized Rust engine that tracks changes with faster-than-light efficiency. By storing only the "inverse operations," Tachyon-RS allows you to move back and forth through time with near-zero overhead.
+Under the hood, Janus offloads all state delta logic to **Tachyon-RS**, a specialized Rust engine that operates on a Directed Acyclic Graph (DAG) of state nodes. By storing only the "inverse operations" and bi-directional transitions, Tachyon-RS enables time travel with $O(1)$ logging overhead.
 
 ## License
 

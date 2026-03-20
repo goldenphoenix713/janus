@@ -8,18 +8,19 @@ class Inventory:
     def __init__(self):
         self.items = []
 
+
 def test_timeline_extraction():
     inv = Inventory()
     inv.branch("empty")  # type: ignore
-    
+
     inv.items.append("Sword")
     inv.branch("armed")  # type: ignore
-    
+
     inv.items.append("Shield")
-    
+
     # Extract timeline from "armed" branch
     timeline = inv.extract_timeline("armed")  # type: ignore
-    
+
     # Should contain:
     # 1. Initial items=[] (UpdateAttr)
     # 2. Append "Sword" (ListInsert)
@@ -27,40 +28,44 @@ def test_timeline_extraction():
     assert timeline[-1]["type"] == "ListInsert"
     assert timeline[-1]["value"] == "Sword"
 
+
 def test_list_reversion():
     inv = Inventory()
     inv.branch("base")  # type: ignore
-    
+
     inv.items.append("Potion")
     assert len(inv.items) == 1
-    
+
     inv.switch("base")  # type: ignore
     assert len(inv.items) == 0
+
 
 @janus(mode="multiversal")
 class Config:
     def __init__(self):
         self.settings = {}
 
+
 def test_dict_reversion():
     c = Config()
     c.branch("empty")  # type: ignore
-    
+
     c.settings["theme"] = "dark"
     c.branch("themed")  # type: ignore
-    
+
     c.settings["font"] = "Inter"
     assert c.settings["theme"] == "dark"
     assert c.settings["font"] == "Inter"
-    
+
     # Revert to empty
     c.switch("empty")  # type: ignore
     assert len(c.settings) == 0
-    
+
     # Revert to themed
     c.switch("themed")  # type: ignore
     assert c.settings["theme"] == "dark"
     assert "font" not in c.settings
+
 
 if __name__ == "__main__":
     pytest.main([__file__])
