@@ -1,0 +1,265 @@
+# Janus: Project Initialization & Architecture Blueprint (Platform Edition)
+
+## 1. Project Scope and Intent
+
+**Janus** is a high-performance Python utility package providing non-linear "Time Travel," state-branching, and extensible state management for complex Python objects.
+
+**The Platform Architecture:**
+
+* **The Face (Janus):** An elegant, tiered Python API. Users can operate in `mode="linear"` for standard undo/redo or `mode="multiversal"` for Git-like branching and merging. It includes a **Plugin Registry** to extend state-tracking to third-party classes (e.g., Pandas DataFrames, PyTorch Tensors).
+* **The Engine (Tachyon-RS):** A cutting-edge Rust backend accessed via PyO3. It maintains a **Directed Acyclic Graph (DAG)** of object states. By treating linear history as a constrained subset of a DAG, the engine remains unified. It logs bi-directional operations and opaque "Plugin Blobs" to achieve $O(1)$ performance overhead.
+
+### Key Architectural Pillars
+
+1. **Tiered Complexity:** `@janus(mode="linear" | "multiversal")` allows developers to opt-in to complexity.
+2. **Extensible Plugin System:** An `AdapterRegistry` allows developers to define custom delta-calculators and inverse-appliers for unsupported types, feeding opaque blobs to the Rust engine.
+3. **Timeline Extraction:** The ability to flatten a complex multiversal path into a single linear sequence of events.
+4. **Tombstone Strategy (Memory Safety):** Rust stores `PyWeakref` (weak references) for complex objects, allowing Python's Garbage Collector to function normally.
+
+---
+
+## 2. Project Directory Structure
+
+```text
+janus/
+├── Cargo.toml                
+├── pyproject.toml            
+├── README.md                 
+├── src/                      
+│   ├── lib.rs                
+│   ├── engine.rs             # DAG-based Tachyon Multiverse logic & Timeline extraction
+│   └── containers.rs         
+├── janus/                    
+│   ├── __init__.py           
+│   ├── decorators.py         # mode-aware @janus decorator
+│   └── registry.py           # Plugin AdapterRegistry for 3rd-party types
+└── tests/                    
+    ├── __init__.py
+    ├── test_multiverse.py    # E2E branching and switching tests
+    └── test_plugins.py       # Tests for custom adapter registration
+```
+
+---
+
+## 3. Configuration Files
+
+### `pyproject.toml`
+
+```toml
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "janus"
+version = "0.2.0"
+description = "Extensible, non-linear state travel powered by the Tachyon-RS engine."
+authors = [{ name = "AI Dev Team", email = "dev@example.com" }]
+requires-python = ">=3.8"
+dependencies = []
+readme = "README.md"
+license = { text = "MIT OR Apache-2.0" }
+
+[tool.maturin]
+module-name = "janus.tachyon_rs"
+features = ["pyo3/extension-module"]
+include = ["src/**/*", "Cargo.toml"]
+```
+
+### `Cargo.toml`
+
+```toml
+[package]
+name = "tachyon-rs"
+version = "0.2.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "tachyon_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38", "multiple-pymethods"] }
+```
+
+---
+
+## 4. Rust Backend Implementation (`src/`)
+
+### `src/engine.rs` (The Extensible DAG Engine)
+
+```rust
+use pyo3::prelude::*;
+use std::collections::HashMap;
+
+#[derive(Clone)]
+pub enum Operation {
+    UpdateAttr { name: String, old_value: PyObject, new_value: PyObject },
+    ListPop { path: String, index: usize, popped_value: PyObject },
+    ListInsert { path: String, index: usize, value: PyObject },
+    // THE FOUNDATION FOR PLUGINS:
+    // Tachyon doesn't need to know what a DataFrame is. It just stores the blob.
+    PluginOp { path: String, adapter_name: String, delta_blob: PyObject },
+}
+
+// Foundation for Timeline Extraction: Nodes know their parents.
+#[derive(Clone)]
+pub struct StateNode {
+    pub id: usize,
+    pub parent_id: Option<usize>,
+    pub deltas: Vec<Operation>,
+}
+
+#[pyclass]
+pub struct TachyonEngine {
+    owner: Py<PyAny>, 
+    nodes: HashMap<usize, StateNode>,
+    branches: HashMap<String, usize>, 
+    current_node: usize,
+    next_node_id: usize,
+    mode: String, // "linear" or "multiversal"
+}
+
+#[pymethods]
+impl TachyonEngine {
+    #[new]
+    pub fn new(owner: Py<PyAny>, mode: String) -> Self {
+        let mut branches = HashMap::new();
+        branches.insert("main".to_string(), 0);
+        
+        let mut nodes = HashMap::new();
+        nodes.insert(0, StateNode { id: 0, parent_id: None, deltas: Vec::new() });
+
+        TachyonEngine { 
+            owner, nodes, branches,
+            current_node: 0, next_node_id: 1, mode
+        }
+    }
+
+    pub fn log_op(&mut self, op: Operation) {
+        // Creates a new node and edge. 
+        // If mode == "linear", it overwrites future nodes if we went back in time.
+        let new_node = StateNode {
+            id: self.next_node_id,
+            parent_id: Some(self.current_node),
+            deltas: vec![op],
+        };
+        self.nodes.insert(self.next_node_id, new_node);
+        self.current_node = self.next_node_id;
+        self.next_node_id += 1;
+    }
+
+    pub fn extract_timeline(&self, py: Python, label: String) -> PyResult<Vec<PyObject>> {
+        // Walks backwards from the target leaf to the root (parent_id == None),
+        // reverses the list, and returns a flat timeline of events.
+        // (Implementation stubbed for blueprint)
+        Ok(Vec::new())
+    }
+    
+    // ... create_branch, switch_branch, and apply_inverse omitted for brevity ...
+}
+```
+
+---
+
+## 5. Python Frontend Implementation (`janus/`)
+
+### `janus/registry.py` (The Plugin Architecture)
+
+```python
+from typing import Any, Protocol
+
+class JanusAdapter(Protocol):
+    def get_delta(self, old_state: Any, new_state: Any) -> Any: ...
+    def apply_inverse(self, target: Any, delta_blob: Any) -> None: ...
+
+ADAPTER_REGISTRY = {}
+
+def register_adapter(target_class):
+    """Decorator to register a custom class adapter for Janus tracking."""
+    def wrapper(adapter_class):
+        ADAPTER_REGISTRY[target_class] = adapter_class()
+        return adapter_class
+    return wrapper
+```
+
+### `janus/decorators.py`
+
+```python
+from .tachyon_rs import TachyonEngine, TrackedList
+from .registry import ADAPTER_REGISTRY
+
+def janus(mode="multiversal"):
+    """Class decorator configuring the state engine mode."""
+    def decorator(cls):
+        orig_init = cls.__init__
+        orig_setattr = cls.__setattr__
+        
+        def __init__(self, *args, **kwargs):
+            object.__setattr__(self, '_engine', TachyonEngine(self, mode))
+            orig_init(self, *args, **kwargs)
+            
+        def __setattr__(self, name, value):
+            if name == '_engine':
+                return object.__setattr__(self, name, value)
+
+            # Plugin Check Foundation
+            value_type = type(value)
+            if value_type in ADAPTER_REGISTRY:
+                # Let the adapter calculate the blob, pass to rust via PluginOp
+                pass 
+            elif isinstance(value, list):
+                value = TrackedList(value, self._engine, name)
+                
+            orig_setattr(self, name, value)
+
+        def branch(self, label: str):
+            if mode == "linear":
+                raise ValueError("Branching is disabled in linear mode.")
+            self._engine.create_branch(label)
+            
+        def switch(self, label: str):
+            self._engine.switch_branch(label)
+            
+        def extract_timeline(self, label: str):
+            return self._engine.extract_timeline(label)
+
+        cls.__init__ = __init__
+        cls.__setattr__ = __setattr__
+        cls.branch = branch
+        cls.switch = switch
+        cls.extract_timeline = extract_timeline
+        return cls
+    return decorator
+```
+
+---
+
+## 6. AI Agent Initialization Protocol
+
+Execute the following shell commands sequentially:
+
+1. `mkdir janus && cd janus`
+2. *Create the directory tree and paste the file contents defined in Sections 3, 4, and 5.*
+3. `uv venv && source .venv/bin/activate` (or `.venv\Scripts\activate` on Windows)
+4. `uv add --dev maturin pytest`
+5. `uv run maturin develop`
+6. `uv run pytest tests/`
+
+---
+
+## 7. Documentation Template Snippet (`README.md`)
+
+```markdown
+# Janus 🏺
+> **The Extensible Multiverse Engine for Python Objects.**
+
+Janus provides a Git-like API for branching, switching, and flattening the state of complex Python objects, powered by a lightning-fast Rust backend (**Tachyon-RS**).
+
+### 🚀 Tiered Complexity
+Choose the right tool for the job. Use `mode="linear"` for high-speed, standard undo/redo, or opt into `mode="multiversal"` to enable parallel state branching and graph traversal. 
+
+### 🔌 Extensible Plugin Registry
+Need to track a `pandas.DataFrame` or a complex custom object? Register a `JanusAdapter` and let Tachyon-RS safely manage the state blobs without slowing down the core engine.
+```

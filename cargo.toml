@@ -1,0 +1,12 @@
+[package]
+name = "tachyon-rs" # The crate name
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0" 
+
+[lib]
+name = "tachyon_rs" # The name of the .so / .pyd file
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38", "multiple-pymethods"] }

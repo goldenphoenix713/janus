@@ -1,0 +1,55 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "janus"
+version = "0.2.0"
+description = "Extensible, non-linear state travel powered by the Tachyon-RS engine."
+authors = [{ name = "AI Dev Team", email = "dev@example.com" }]
+requires-python = ">=3.12"
+dependencies = []
+readme = "README.md"
+license = { text = "MIT OR Apache-2.0" }
+
+[dependency-groups]
+dev = [
+    "maturin>=1.5,<2.0",
+    "mypy>=1.19.1",
+    "pre-commit>=4.5.1",
+    "pytest>=7.0",
+    "ruff>=0.15.7",
+]
+
+[tool.maturin]
+module-name = "janus.tachyon_rs"
+features = ["pyo3/extension-module"]
+include = ["src/**/*", "Cargo.toml"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "U"]
+ignore = []
+
+[tool.mypy]
+python_version = "3.12"
+check_untyped_defs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "plotly.*",
+    "dash.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]

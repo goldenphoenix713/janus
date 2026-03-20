@@ -1,0 +1,8 @@
+[project]
+name = "janus" # PyPI name (janus is likely taken)
+version = "0.1.0"
+description = "Effortless state travel powered by Tachyon-RS"
+license = { text = "MIT OR Apache-2.0" }
+
+[tool.maturin]
+module-name = "janus.tachyon_rs" # Nest the binary inside the janus folder
