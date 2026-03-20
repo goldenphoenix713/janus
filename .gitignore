@@ -54,3 +54,6 @@ release/
 # --- Maturin / Build ---
 /janus/tachyon_rs.abi3.so
 /janus/tachyon_rs.pyd
+**/*.dSYM/
+**/*.dylib
+**/*copy*
