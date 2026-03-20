@@ -1,8 +1,8 @@
 #![allow(non_local_definitions)]
 use pyo3::prelude::*;
 
-mod engine;
 mod containers;
+mod engine;
 
 #[pymodule]
 fn tachyon_rs(_py: Python, m: &PyModule) -> PyResult<()> {

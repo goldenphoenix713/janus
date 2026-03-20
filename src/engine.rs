@@ -3,13 +3,38 @@ use std::collections::HashMap;
 
 #[derive(Clone)]
 pub enum Operation {
-    UpdateAttr { name: String, old_value: PyObject, new_value: PyObject },
-    ListPop { path: String, index: usize, popped_value: PyObject },
-    ListInsert { path: String, index: usize, value: PyObject },
-    DictUpdate { path: String, key: PyObject, old_value: PyObject, new_value: PyObject },
-    DictDelete { path: String, key: PyObject, old_value: PyObject },
+    UpdateAttr {
+        name: String,
+        old_value: PyObject,
+        new_value: PyObject,
+    },
+    ListPop {
+        path: String,
+        index: usize,
+        popped_value: PyObject,
+    },
+    ListInsert {
+        path: String,
+        index: usize,
+        value: PyObject,
+    },
+    DictUpdate {
+        path: String,
+        key: PyObject,
+        old_value: PyObject,
+        new_value: PyObject,
+    },
+    DictDelete {
+        path: String,
+        key: PyObject,
+        old_value: PyObject,
+    },
     // THE FOUNDATION FOR PLUGINS:
-    PluginOp { path: String, adapter_name: String, delta_blob: PyObject },
+    PluginOp {
+        path: String,
+        adapter_name: String,
+        delta_blob: PyObject,
+    },
 }
 
 // Foundation for Timeline Extraction: Nodes know their parents.
@@ -124,13 +149,21 @@ impl TachyonEngine {
                     for op in &node.deltas {
                         let op_dict = pyo3::types::PyDict::new(py);
                         match op {
-                            Operation::UpdateAttr { name, old_value, new_value } => {
+                            Operation::UpdateAttr {
+                                name,
+                                old_value,
+                                new_value,
+                            } => {
                                 op_dict.set_item("type", "UpdateAttr")?;
                                 op_dict.set_item("name", name)?;
                                 op_dict.set_item("old", old_value)?;
                                 op_dict.set_item("new", new_value)?;
                             }
-                            Operation::ListPop { path, index, popped_value } => {
+                            Operation::ListPop {
+                                path,
+                                index,
+                                popped_value,
+                            } => {
                                 op_dict.set_item("type", "ListPop")?;
                                 op_dict.set_item("path", path)?;
                                 op_dict.set_item("index", index)?;
@@ -142,20 +175,33 @@ impl TachyonEngine {
                                 op_dict.set_item("index", index)?;
                                 op_dict.set_item("value", value)?;
                             }
-                            Operation::DictUpdate { path, key, old_value, new_value } => {
+                            Operation::DictUpdate {
+                                path,
+                                key,
+                                old_value,
+                                new_value,
+                            } => {
                                 op_dict.set_item("type", "DictUpdate")?;
                                 op_dict.set_item("path", path)?;
                                 op_dict.set_item("key", key)?;
                                 op_dict.set_item("old", old_value)?;
                                 op_dict.set_item("new", new_value)?;
                             }
-                            Operation::DictDelete { path, key, old_value } => {
+                            Operation::DictDelete {
+                                path,
+                                key,
+                                old_value,
+                            } => {
                                 op_dict.set_item("type", "DictDelete")?;
                                 op_dict.set_item("path", path)?;
                                 op_dict.set_item("key", key)?;
                                 op_dict.set_item("old", old_value)?;
                             }
-                            Operation::PluginOp { path, adapter_name, delta_blob } => {
+                            Operation::PluginOp {
+                                path,
+                                adapter_name,
+                                delta_blob,
+                            } => {
                                 op_dict.set_item("type", "PluginOp")?;
                                 op_dict.set_item("path", path)?;
                                 op_dict.set_item("adapter", adapter_name)?;
@@ -176,7 +222,11 @@ impl TachyonEngine {
     }
 
     pub fn log_list_pop(&mut self, path: String, index: usize, popped_value: PyObject) {
-        let op = Operation::ListPop { path, index, popped_value };
+        let op = Operation::ListPop {
+            path,
+            index,
+            popped_value,
+        };
         self.append_node(vec![op]);
     }
 
@@ -185,13 +235,28 @@ impl TachyonEngine {
         self.append_node(vec![op]);
     }
 
-    pub fn log_dict_update(&mut self, path: String, key: PyObject, old_value: PyObject, new_value: PyObject) {
-        let op = Operation::DictUpdate { path, key, old_value, new_value };
+    pub fn log_dict_update(
+        &mut self,
+        path: String,
+        key: PyObject,
+        old_value: PyObject,
+        new_value: PyObject,
+    ) {
+        let op = Operation::DictUpdate {
+            path,
+            key,
+            old_value,
+            new_value,
+        };
         self.append_node(vec![op]);
     }
 
     pub fn log_dict_delete(&mut self, path: String, key: PyObject, old_value: PyObject) {
-        let op = Operation::DictDelete { path, key, old_value };
+        let op = Operation::DictDelete {
+            path,
+            key,
+            old_value,
+        };
         self.append_node(vec![op]);
     }
 }
@@ -258,11 +323,19 @@ impl TachyonEngine {
 
         for op in deltas {
             match op {
-                Operation::UpdateAttr { name, old_value, new_value } => {
+                Operation::UpdateAttr {
+                    name,
+                    old_value,
+                    new_value,
+                } => {
                     let val = if forward { new_value } else { old_value };
                     owner.setattr(name.as_str(), val)?;
                 }
-                Operation::ListPop { path, index, popped_value } => {
+                Operation::ListPop {
+                    path,
+                    index,
+                    popped_value,
+                } => {
                     if let Ok(list_attr) = owner.getattr(path.as_str()) {
                         if forward {
                             list_attr.call_method1("pop", (*index,))?;
@@ -280,7 +353,12 @@ impl TachyonEngine {
                         }
                     }
                 }
-                Operation::DictUpdate { path, key, old_value, new_value } => {
+                Operation::DictUpdate {
+                    path,
+                    key,
+                    old_value,
+                    new_value,
+                } => {
                     if let Ok(dict_attr) = owner.getattr(path.as_str()) {
                         if forward {
                             dict_attr.call_method1("__setitem__", (key, new_value))?;
@@ -291,7 +369,11 @@ impl TachyonEngine {
                         }
                     }
                 }
-                Operation::DictDelete { path, key, old_value } => {
+                Operation::DictDelete {
+                    path,
+                    key,
+                    old_value,
+                } => {
                     if let Ok(dict_attr) = owner.getattr(path.as_str()) {
                         if forward {
                             dict_attr.call_method1("__delitem__", (key,))?;
@@ -318,7 +400,11 @@ pub struct TrackedList {
 impl TrackedList {
     #[new]
     pub fn new(initial: Vec<PyObject>, engine: Py<TachyonEngine>, name: String) -> Self {
-        TrackedList { inner: initial, engine, name }
+        TrackedList {
+            inner: initial,
+            engine,
+            name,
+        }
     }
 
     pub fn append(&mut self, py: Python, value: PyObject) -> PyResult<()> {
@@ -332,12 +418,20 @@ impl TrackedList {
 
     pub fn pop(&mut self, py: Python, index: Option<isize>) -> PyResult<PyObject> {
         let idx = match index {
-            Some(i) => (if i < 0 { self.inner.len() as isize + i } else { i }) as usize,
+            Some(i) => {
+                (if i < 0 {
+                    self.inner.len() as isize + i
+                } else {
+                    i
+                }) as usize
+            }
             None => self.inner.len() - 1,
         };
 
         if idx >= self.inner.len() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>("pop index out of range"));
+            return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                "pop index out of range",
+            ));
         }
 
         let value = self.inner.remove(idx);
@@ -348,7 +442,9 @@ impl TrackedList {
     }
 
     pub fn __getitem__(&self, index: usize) -> PyResult<PyObject> {
-        self.inner.get(index).cloned().ok_or_else(|| PyErr::new::<pyo3::exceptions::PyIndexError, _>("list index out of range"))
+        self.inner.get(index).cloned().ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyIndexError, _>("list index out of range")
+        })
     }
 
     pub fn __len__(&self) -> usize {
@@ -366,8 +462,16 @@ pub struct TrackedDict {
 #[pymethods]
 impl TrackedDict {
     #[new]
-    pub fn new(initial: HashMap<String, PyObject>, engine: Py<TachyonEngine>, name: String) -> Self {
-        TrackedDict { inner: initial, engine, name }
+    pub fn new(
+        initial: HashMap<String, PyObject>,
+        engine: Py<TachyonEngine>,
+        name: String,
+    ) -> Self {
+        TrackedDict {
+            inner: initial,
+            engine,
+            name,
+        }
     }
 
     pub fn __setitem__(&mut self, py: Python, key: String, value: PyObject) -> PyResult<()> {
@@ -392,7 +496,10 @@ impl TrackedDict {
     }
 
     pub fn __getitem__(&self, key: String) -> PyResult<PyObject> {
-        self.inner.get(&key).cloned().ok_or_else(|| PyErr::new::<pyo3::exceptions::PyKeyError, _>(key))
+        self.inner
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyKeyError, _>(key))
     }
 
     pub fn __contains__(&self, key: String) -> bool {
@@ -416,6 +523,9 @@ impl TrackedDict {
     }
 
     pub fn get(&self, py: Python, key: String, default: Option<PyObject>) -> PyObject {
-        self.inner.get(&key).cloned().unwrap_or_else(|| default.unwrap_or_else(|| py.None()))
+        self.inner
+            .get(&key)
+            .cloned()
+            .unwrap_or_else(|| default.unwrap_or_else(|| py.None()))
     }
 }
