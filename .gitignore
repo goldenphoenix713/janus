@@ -56,3 +56,6 @@ release/
 **/*.dSYM/
 **/*.dylib
 **/*copy*
+
+# --- Other ---
+*.local.md

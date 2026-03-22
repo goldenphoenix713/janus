@@ -43,16 +43,44 @@ graph TD
 
 ## Phase 1 — The Linear Foundation
 
-**Goal:** Provide a complete `mode="linear"` experience with undo/redo and "overwrite future" semantics.
+**Goal:** Provide a complete `mode="linear"` experience with undo/redo, "overwrite future" semantics, and a tiered decorator API.
 
 ### Phase 1 Current State
 
 - `\_\_setattr\_\_` intercept → ✅ works
 - Delta logging for primitives → ✅ works (`log_update_attr`)
 - `mode="linear"` auto-advances `"main"` pointer → ✅ works
+- Tiered decorator API (`@timeline` / `@multiverse`) → ❌ missing (currently uses single `@janus` decorator)
 - Undo/Redo API → ❌ missing
 - Overwrite-future on new mutation after undo → ❌ missing
 - Linear-mode guard (prevent branch/switch to non-main) → ❌ missing
+
+---
+
+### Waypoint 1.0 — Decorator API Refactor (`@timeline` / `@multiverse`)
+
+Rename the current monolithic `@janus(mode=...)` decorator into two purpose-built decorators — `@timeline` for linear undo/redo and `@multiverse` for full DAG branching — as specified in the [blueprint update](file:///Users/eddie/python_projects/janus/blueprint_update.md). The `@timeline` decorator should also expose a `.to_multiverse()` upgrade path.
+
+#### 1.0 Deliverables
+
+| # | Item | File(s) | Description |
+| :--- | :--- | :--- | :--- |
+| 1 | `timeline` decorator | `decorators.py` | New decorator that initializes `TachyonEngine` in `mode="linear"`. Attaches `snapshot()`, `revert()`, and `to_multiverse()` methods. `to_multiverse()` switches the engine mode and dynamically binds `branch()`, `switch()`, and `extract_timeline()` to the live instance. |
+| 2 | `multiverse` decorator | `decorators.py` | New decorator that initializes `TachyonEngine` in `mode="multiversal"`. Attaches `branch()`, `switch()`, and `extract_timeline()` methods directly. |
+| 3 | Remove `@janus` | `decorators.py` | Remove the existing `janus(mode=...)` factory decorator. |
+| 4 | Update exports | `__init__.py` | Export `timeline` and `multiverse` instead of `janus`. Update `__all__`. |
+| 5 | Type stubs | `tachyon_rs.pyi` | Add `to_multiverse()` signature if engine-level support is needed. |
+| 6 | Update tests | `tests/test_timeline.py`, `tests/test_multiverse.py` | Migrate all existing tests from `@janus(mode=...)` to the new decorator names. Add tests for `to_multiverse()` dynamic upgrade. |
+| 7 | Update docs | `README.md` | Replace all `@janus(mode=...)` examples with `@timeline` / `@multiverse` usage. |
+
+#### 1.0 Estimates
+
+| Metric | Value |
+| :--- | :--- |
+| **Priority** | 🔴 Critical — prerequisite for the tiered API that all subsequent work builds on |
+| **Difficulty** | ⭐⭐ (2/5) — mostly refactoring existing logic into two entry points |
+| **Time** | 1–2 days |
+| **ROI** | 🟢 Very High — establishes the public API contract; all docs, tests, and future waypoints depend on this |
 
 ---
 
@@ -437,7 +465,7 @@ Implement configurable pruning strategies.
 
 | Sprint | Weeks | Waypoints | Theme |
 | :--- | :--- | :--- | :--- |
-| **Sprint 1** | Wk 1–2 | 1.1, 1.2, 1.3 | Linear mode completeness |
+| **Sprint 1** | Wk 1–2 | 1.0, 1.1, 1.2, 1.3 | Decorator refactor & linear mode completeness |
 | **Sprint 2** | Wk 2–4 | 2.1, 2.3 | Multiversal correctness |
 | **Sprint 3** | Wk 4–6 | 3.1, 3.2 | Container completeness |
 | **Sprint 4** | Wk 6–7 | 2.2, 4.2 | API polish & timeline |
@@ -454,6 +482,7 @@ Implement configurable pruning strategies.
 
 | Waypoint | Priority | Difficulty | Time | ROI |
 | :--- | :--- | :--- | :--- | :--- |
+| 1.0 — Decorator Refactor | 🔴 Critical | ⭐⭐ | 1–2d | 🟢 Very High |
 | 1.1 — Undo/Redo | 🔴 Critical | ⭐⭐ | 2–3d | 🟢 Very High |
 | 1.2 — Overwrite Future | 🔴 Critical | ⭐⭐ | 1–2d | 🟢 Very High |
 | 1.3 — Linear Guards | 🟡 Medium | ⭐ | 0.5d | 🟢 High |

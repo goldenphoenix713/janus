@@ -1,0 +1,45 @@
+# --- AI Context Exclusion ---
+# Use this file to prevent AI agents from indexing unnecessary files.
+
+# 1. Version Control & Metadata
+.git/
+.svn/
+.hg/
+.DS_Store
+*.log
+
+# 2. Dependencies & Environments
+# These are too large for the context window and the AI already "knows" these libraries.
+node_modules/
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+target/          # Rust build artifacts
+
+# 3. Data & Large Files
+# Prevents the AI from trying to "read" binary data or massive datasets.
+*.parquet
+*.csv
+*.jsonl
+*.sqlite
+*.db
+*.bin
+*.pkl
+
+# 4. Build Artifacts & Distribution
+dist/
+build/
+*.egg-info/
+.tox/
+.pytest_cache/
+.mypy_cache/
+.rustup/
+
+# 5. Environment Variables & Secrets
+# Crucial for security—never let an AI process your keys.
+.env
+.env.*
+secrets.yaml
+credentials.json
