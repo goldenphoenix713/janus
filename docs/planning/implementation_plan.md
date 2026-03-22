@@ -10,9 +10,9 @@ Before laying out the work, here's where each roadmap phase actually stands toda
 
 | Phase | Roadmap Status | Actual Codebase Status |
 | :--- | :--- | :--- |
-| **P1 — Linear Foundation** | "2 Weeks" | **~85 % done.** `\_\_setattr\_\_` intercept works; delta logging works; `mode="linear"` auto-advances `"main"` branch. **Gap:** no linear undo/redo API (`undo()` / `redo()`), no "overwrite future" logic. |
-| **P2 — Multiversal Branching** | "3 Weeks" | **~75 % done.** DAG nodes, `create_branch`, LCA-based `switch_branch` all work. **Gap:** no `PluginOp` inverse application during switch (the `_ => {}` catch-all in `apply_node_deltas`), no merge, no branch deletion. |
-| **P3 — Plugins & Containers** | "4 Weeks" | **~50 % done.** `TrackedList` (append/pop) and `TrackedDict` (`\_\_setitem\_\_`/`\_\_delitem\_\_`) exist. `AdapterRegistry` and `register_adapter` work for *logging*. **Gap:** `apply_inverse` is never called during `switch_branch`; `TrackedList` missing `\_\_setitem\_\_`, `extend`, `remove`, `insert`, `\_\_repr\_\_`, `\_\_iter\_\_`; `TrackedDict` missing `update`, `pop`, `values`, `items`, `\_\_repr\_\_`; no pandas/numpy adapters. |
+| **P1 — Linear Foundation** | "2 Weeks" | **~95 % done.** Tiered decorators (`@timeline` / `@multiverse`) and Rust-native `undo()` / `redo()` are complete. **Gap:** "overwrite future" logic. |
+| **P2 — Multiversal Branching** | "3 Weeks" | **~90 % done.** DAG nodes, moving branches, and branch management (list/current) are complete. **Gap:** `PluginOp` inverse application, merge. |
+| **P3 — Plugins & Containers** | "4 Weeks" | **~60 % done.** `TrackedList` and `TrackedDict` are logging correctly and handle `_restoring` state to prevent history pollution. |
 | **P4 — Timeline & Flattening** | "2 Weeks" | **~40 % done.** `extract_timeline` returns a flat list of dicts. **Gap:** no "history flattening / squash" (merge a branch into a linear sequence with net-effect deltas); no rich formatting or filtering; no timeline diff. |
 | **P5 — Tombstone & Memory** | "2 Weeks" | **0 % done.** No weak refs, no pruning, no benchmarks for memory. |
 
@@ -50,10 +50,10 @@ graph TD
 - `\_\_setattr\_\_` intercept → ✅ works
 - Delta logging for primitives → ✅ works (`log_update_attr`)
 - `mode="linear"` auto-advances `"main"` pointer → ✅ works
-- Tiered decorator API (`@timeline` / `@multiverse`) → ❌ missing (currently uses single `@janus` decorator)
-- Undo/Redo API → ❌ missing
+- Tiered decorator API (`@timeline` / `@multiverse`) → ✅ works
+- Undo/Redo API → ✅ works (Rust-native)
 - Overwrite-future on new mutation after undo → ❌ missing
-- Linear-mode guard (prevent branch/switch to non-main) → ❌ missing
+- Linear-mode guard (prevent branch/switch to non-main) → ✅ works
 
 ---
 
@@ -230,6 +230,22 @@ Edge cases in `switch_branch` that need attention.
 | 1 | Nested attr restoration | `engine.rs` | When restoring a `TrackedList` or `TrackedDict` during switch, ensure the proxy object on the owner is properly re-wrapped (currently, raw `list`/`dict` may be set via `owner.setattr`). |
 | 2 | Error handling | `engine.rs` | Handle the case where `getattr(path)` fails during restoration (attribute deleted mid-history). |
 | 3 | Tests | `tests/test_multiverse.py` | Expand: multi-attribute switching, deep nesting, switch to same branch (no-op). |
+
+---
+
+### Waypoint 2.4 — Edge Case Verification [NEW]
+
+Ensure robustness across complex state transitions and container nesting.
+
+#### 2.4 Deliverables
+
+| # | Item | File(s) | Description |
+| :--- | :--- | :--- | :--- |
+| 1 | Nested Containers | `tests/test_nested_containers.py` | Verify `undo` for a list containing tracked dicts. |
+| 2 | Linear Restrictions | `tests/test_linear_guards.py` | Verify `branch()` raises an error in linear mode. |
+| 3 | Complex Branching | `tests/test_branching_depth.py` | Fork two branches from the same Moment and verify they move independently. |
+| 4 | Timeline Extraction | `tests/test_timeline_query.py` | Verify `extract_timeline` returns the correct path for a deeply branched node. |
+| 5 | Benchmark | `tests/test_performance.py` | Benchmark timeline extraction on deep history. |
 
 #### 2.3 Estimates
 

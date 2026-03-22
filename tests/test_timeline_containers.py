@@ -1,9 +1,9 @@
 import pytest
 
-from janus import janus
+from janus import multiverse
 
 
-@janus(mode="multiversal")
+@multiverse
 class Inventory:
     def __init__(self):
         self.items = []
@@ -11,10 +11,10 @@ class Inventory:
 
 def test_timeline_extraction():
     inv = Inventory()
-    inv.branch("empty")  # type: ignore
+    inv.create_moment_label("empty")  # type: ignore
 
     inv.items.append("Sword")
-    inv.branch("armed")  # type: ignore
+    inv.create_moment_label("armed")  # type: ignore
 
     inv.items.append("Shield")
 
@@ -31,16 +31,16 @@ def test_timeline_extraction():
 
 def test_list_reversion():
     inv = Inventory()
-    inv.branch("base")  # type: ignore
+    inv.create_moment_label("base")  # type: ignore
 
     inv.items.append("Potion")
     assert len(inv.items) == 1
 
-    inv.switch("base")  # type: ignore
+    inv.jump_to("base")  # type: ignore
     assert len(inv.items) == 0
 
 
-@janus(mode="multiversal")
+@multiverse
 class Config:
     def __init__(self):
         self.settings = {}
@@ -48,21 +48,21 @@ class Config:
 
 def test_dict_reversion():
     c = Config()
-    c.branch("empty")  # type: ignore
+    c.create_moment_label("empty")  # type: ignore
 
     c.settings["theme"] = "dark"
-    c.branch("themed")  # type: ignore
+    c.create_moment_label("themed")  # type: ignore
 
     c.settings["font"] = "Inter"
     assert c.settings["theme"] == "dark"
     assert c.settings["font"] == "Inter"
 
     # Revert to empty
-    c.switch("empty")  # type: ignore
+    c.jump_to("empty")  # type: ignore
     assert len(c.settings) == 0
 
     # Revert to themed
-    c.switch("themed")  # type: ignore
+    c.jump_to("themed")  # type: ignore
     assert c.settings["theme"] == "dark"
     assert "font" not in c.settings
 

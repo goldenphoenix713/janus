@@ -1,7 +1,7 @@
-from janus import janus
+from janus import multiverse
 
 
-@janus(mode="multiversal")
+@multiverse
 class Hero:
     def __init__(self, name, hp):
         self.name = name
@@ -17,5 +17,5 @@ def test_basic_branching():
     h.branch("chaos-timeline")  # type: ignore
     h.hp = 50
 
-    h.switch("main")  # type: ignore
+    h.jump_to("main")  # type: ignore
     # assert h.hp == 100 # This will fail until apply_inverse is implemented

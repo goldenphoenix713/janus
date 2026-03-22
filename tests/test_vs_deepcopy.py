@@ -3,11 +3,11 @@ import timeit
 
 import matplotlib.pyplot as plt
 
-from janus import janus
+from janus import multiverse
 
 
 # 1. Define the Janus-tracked class
-@janus(mode="multiversal")
+@multiverse
 class LargeState:
     def __init__(self, size):
         self.data = list(range(size))

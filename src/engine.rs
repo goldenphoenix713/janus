@@ -37,6 +37,12 @@ pub enum Operation {
     },
 }
 
+#[derive(Clone)]
+pub enum Mode {
+    Linear,
+    Multiversal,
+}
+
 // Foundation for Timeline Extraction: Nodes know their parents.
 #[derive(Clone)]
 pub struct StateNode {
@@ -52,18 +58,23 @@ pub struct StateNode {
 pub struct TachyonEngine {
     owner: Py<PyAny>,
     nodes: HashMap<usize, StateNode>,
-    branches: HashMap<String, usize>,
+    node_labels: HashMap<String, usize>,
+    active_branch: String,
+    branch_labels: HashMap<String, usize>,
     current_node: usize,
     next_node_id: usize,
-    mode: String, // "linear" or "multiversal"
+    mode: Mode,
 }
 
 #[pymethods]
 impl TachyonEngine {
     #[new]
     pub fn new(owner: Py<PyAny>, mode: String) -> Self {
-        let mut branches = HashMap::new();
-        branches.insert("main".to_string(), 0);
+        let mut node_labels = HashMap::new();
+        let mut branch_labels = HashMap::new();
+        node_labels.insert("__genesis__".to_string(), 0);
+        branch_labels.insert("main".to_string(), 0);
+        let active_branch = "main".to_string();
 
         let mut nodes = HashMap::new();
         nodes.insert(
@@ -76,14 +87,30 @@ impl TachyonEngine {
             },
         );
 
+        let mode = match mode.as_str() {
+            "linear" => Mode::Linear,
+            "multiversal" => Mode::Multiversal,
+            _ => panic!("Invalid mode: {}", mode),
+        };
+
         TachyonEngine {
             owner,
             nodes,
-            branches,
+            node_labels,
+            branch_labels,
+            active_branch,
             current_node: 0,
             next_node_id: 1,
             mode,
         }
+    }
+
+    pub fn list_nodes(&self) -> Vec<String> {
+        self.node_labels.keys().cloned().collect()
+    }
+
+    pub fn list_branches(&self) -> Vec<String> {
+        self.branch_labels.keys().cloned().collect()
     }
 
     pub fn log_update_attr(&mut self, name: String, old_value: PyObject, new_value: PyObject) {
@@ -104,121 +131,165 @@ impl TachyonEngine {
         self.append_node(vec![op]);
     }
 
+    pub fn label_node(&mut self, node_label: String) -> PyResult<()> {
+        if self.node_labels.contains_key(&node_label)
+            || self.branch_labels.contains_key(&node_label)
+        {
+            return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                "Label '{}' already exists",
+                node_label
+            )));
+        }
+        self.node_labels.insert(node_label, self.current_node);
+        Ok(())
+    }
+
+    pub fn move_to(&mut self, py: Python, label: String) -> PyResult<()> {
+        let target_node_id = if let Some(&target_node_id) = self.node_labels.get(&label) {
+            target_node_id
+        } else if let Some(&target_node_id) = self.branch_labels.get(&label) {
+            target_node_id
+        } else {
+            return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                "Label '{}' not found",
+                label
+            )));
+        };
+
+        self.move_to_node_id(py, target_node_id)?;
+
+        if self.branch_labels.contains_key(&label) {
+            self.active_branch = label;
+        }
+        Ok(())
+    }
+
+    pub fn undo(&mut self, py: Python) -> PyResult<()> {
+        if let Some(node) = self.nodes.get(&self.current_node) {
+            if let Some(&parent_id) = node.parents.first() {
+                self.move_to_node_id(py, parent_id)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn redo(&mut self, py: Python) -> PyResult<()> {
+        if let Some(node) = self.nodes.get(&(self.current_node + 1)) {
+            self.move_to_node_id(py, node.id)?;
+        }
+        Ok(())
+    }
+
+    pub fn move_to_creation(&mut self, py: Python) -> PyResult<()> {
+        self.move_to_node_id(py, 0)
+    }
+
     pub fn create_branch(&mut self, label: String) {
-        self.branches.insert(label, self.current_node);
-    }
-
-    pub fn switch_branch(&mut self, py: Python, label: String) -> PyResult<()> {
-        if let Some(&target_node_id) = self.branches.get(&label) {
-            let owner = self.owner.as_ref(py);
-            owner.setattr("_restoring", true)?;
-
-            let (path_up, path_down) = self.get_shortest_path(self.current_node, target_node_id);
-
-            // 1. Move UP to LCA (apply backwards)
-            for node_id in path_up {
-                if let Some(node) = self.nodes.get(&node_id) {
-                    self.apply_node_deltas(py, node, false)?;
-                }
-            }
-
-            // 2. Move DOWN to target (apply forwards)
-            for node_id in path_down {
-                if let Some(node) = self.nodes.get(&node_id) {
-                    self.apply_node_deltas(py, node, true)?;
-                }
-            }
-
-            owner.setattr("_restoring", false)?;
-            self.current_node = target_node_id;
-            Ok(())
-        } else {
-            Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
-                "Branch '{}' not found",
-                label
-            )))
+        match self.mode {
+            Mode::Linear => panic!("Branching is not allowed in linear mode."),
+            Mode::Multiversal => {}
         }
+        self.branch_labels.insert(label.clone(), self.current_node);
+        self.active_branch = label;
     }
 
-    pub fn extract_timeline(&self, py: Python, label: String) -> PyResult<Vec<PyObject>> {
-        if let Some(&target_node_id) = self.branches.get(&label) {
-            let path = self.get_root_to_node_path(target_node_id);
-            let mut timeline = Vec::new();
-            for node_id in path {
-                if let Some(node) = self.nodes.get(&node_id) {
-                    for op in &node.deltas {
-                        let op_dict = pyo3::types::PyDict::new(py);
-                        match op {
-                            Operation::UpdateAttr {
-                                name,
-                                old_value,
-                                new_value,
-                            } => {
-                                op_dict.set_item("type", "UpdateAttr")?;
-                                op_dict.set_item("name", name)?;
-                                op_dict.set_item("old", old_value)?;
-                                op_dict.set_item("new", new_value)?;
-                            }
-                            Operation::ListPop {
-                                path,
-                                index,
-                                popped_value,
-                            } => {
-                                op_dict.set_item("type", "ListPop")?;
-                                op_dict.set_item("path", path)?;
-                                op_dict.set_item("index", index)?;
-                                op_dict.set_item("value", popped_value)?;
-                            }
-                            Operation::ListInsert { path, index, value } => {
-                                op_dict.set_item("type", "ListInsert")?;
-                                op_dict.set_item("path", path)?;
-                                op_dict.set_item("index", index)?;
-                                op_dict.set_item("value", value)?;
-                            }
-                            Operation::DictUpdate {
-                                path,
-                                key,
-                                old_value,
-                                new_value,
-                            } => {
-                                op_dict.set_item("type", "DictUpdate")?;
-                                op_dict.set_item("path", path)?;
-                                op_dict.set_item("key", key)?;
-                                op_dict.set_item("old", old_value)?;
-                                op_dict.set_item("new", new_value)?;
-                            }
-                            Operation::DictDelete {
-                                path,
-                                key,
-                                old_value,
-                            } => {
-                                op_dict.set_item("type", "DictDelete")?;
-                                op_dict.set_item("path", path)?;
-                                op_dict.set_item("key", key)?;
-                                op_dict.set_item("old", old_value)?;
-                            }
-                            Operation::PluginOp {
-                                path,
-                                adapter_name,
-                                delta_blob,
-                            } => {
-                                op_dict.set_item("type", "PluginOp")?;
-                                op_dict.set_item("path", path)?;
-                                op_dict.set_item("adapter", adapter_name)?;
-                                op_dict.set_item("delta", delta_blob)?;
-                            }
+    #[getter]
+    pub fn current_branch(&self) -> String {
+        self.active_branch.to_string()
+    }
+
+    #[getter]
+    pub fn current_node(&self) -> usize {
+        self.current_node
+    }
+
+    pub fn extract_timeline(&self, py: Python, label: Option<String>) -> PyResult<Vec<PyObject>> {
+        // TODO: Should this return a new engine with the extracted timeline?
+        let target_node_id = match label {
+            Some(label) => self
+                .node_labels
+                .get(&label)
+                .or_else(|| self.branch_labels.get(&label))
+                .cloned()
+                .ok_or_else(|| {
+                    PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                        "Label '{}' not found",
+                        label
+                    ))
+                })?,
+            None => self.current_node,
+        };
+        let path = self.get_root_to_node_path(target_node_id);
+        let mut timeline = Vec::new();
+        for node_id in path {
+            if let Some(node) = self.nodes.get(&node_id) {
+                for op in &node.deltas {
+                    let op_dict = pyo3::types::PyDict::new(py);
+                    match op {
+                        Operation::UpdateAttr {
+                            name,
+                            old_value,
+                            new_value,
+                        } => {
+                            op_dict.set_item("type", "UpdateAttr")?;
+                            op_dict.set_item("name", name)?;
+                            op_dict.set_item("old", old_value)?;
+                            op_dict.set_item("new", new_value)?;
                         }
-                        timeline.push(op_dict.to_object(py));
+                        Operation::ListPop {
+                            path,
+                            index,
+                            popped_value,
+                        } => {
+                            op_dict.set_item("type", "ListPop")?;
+                            op_dict.set_item("path", path)?;
+                            op_dict.set_item("index", index)?;
+                            op_dict.set_item("value", popped_value)?;
+                        }
+                        Operation::ListInsert { path, index, value } => {
+                            op_dict.set_item("type", "ListInsert")?;
+                            op_dict.set_item("path", path)?;
+                            op_dict.set_item("index", index)?;
+                            op_dict.set_item("value", value)?;
+                        }
+                        Operation::DictUpdate {
+                            path,
+                            key,
+                            old_value,
+                            new_value,
+                        } => {
+                            op_dict.set_item("type", "DictUpdate")?;
+                            op_dict.set_item("path", path)?;
+                            op_dict.set_item("key", key)?;
+                            op_dict.set_item("old", old_value)?;
+                            op_dict.set_item("new", new_value)?;
+                        }
+                        Operation::DictDelete {
+                            path,
+                            key,
+                            old_value,
+                        } => {
+                            op_dict.set_item("type", "DictDelete")?;
+                            op_dict.set_item("path", path)?;
+                            op_dict.set_item("key", key)?;
+                            op_dict.set_item("old", old_value)?;
+                        }
+                        Operation::PluginOp {
+                            path,
+                            adapter_name,
+                            delta_blob,
+                        } => {
+                            op_dict.set_item("type", "PluginOp")?;
+                            op_dict.set_item("path", path)?;
+                            op_dict.set_item("adapter", adapter_name)?;
+                            op_dict.set_item("delta", delta_blob)?;
+                        }
                     }
+                    timeline.push(op_dict.to_object(py));
                 }
             }
-            Ok(timeline)
-        } else {
-            Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
-                "Branch '{}' not found",
-                label
-            )))
         }
+        Ok(timeline)
     }
 
     pub fn log_list_pop(&mut self, path: String, index: usize, popped_value: PyObject) {
@@ -274,9 +345,8 @@ impl TachyonEngine {
         self.current_node = node_id;
         self.next_node_id += 1;
 
-        if self.mode == "linear" {
-            self.branches.insert("main".to_string(), node_id);
-        }
+        self.branch_labels
+            .insert(self.active_branch.clone(), node_id);
     }
 
     fn get_shortest_path(&self, from_id: usize, to_id: usize) -> (Vec<usize>, Vec<usize>) {
@@ -300,6 +370,31 @@ impl TachyonEngine {
         let path_down: Vec<usize> = to_path[lca_idx + 1..].to_vec();
 
         (path_up, path_down)
+    }
+
+    fn move_to_node_id(&mut self, py: Python, node_id: usize) -> PyResult<()> {
+        let owner = self.owner.as_ref(py);
+        owner.setattr("_restoring", true)?;
+
+        let (path_up, path_down) = self.get_shortest_path(self.current_node, node_id);
+
+        // 1. Move UP to LCA (apply backwards)
+        for node_id in path_up {
+            if let Some(node) = self.nodes.get(&node_id) {
+                self.apply_node_deltas(py, node, false)?;
+            }
+        }
+
+        // 2. Move DOWN to target (apply forwards)
+        for node_id in path_down {
+            if let Some(node) = self.nodes.get(&node_id) {
+                self.apply_node_deltas(py, node, true)?;
+            }
+        }
+
+        owner.setattr("_restoring", false)?;
+        self.current_node = node_id;
+        Ok(())
     }
 
     fn get_root_to_node_path(&self, node_id: usize) -> Vec<usize> {
@@ -411,7 +506,13 @@ impl TrackedList {
         let index = self.inner.len();
         self.inner.push(value.clone());
         if let Ok(mut engine) = self.engine.try_borrow_mut(py) {
-            engine.log_list_insert(self.name.clone(), index, value);
+            if !engine
+                .owner
+                .getattr(py, "_restoring")?
+                .extract::<bool>(py)?
+            {
+                engine.log_list_insert(self.name.clone(), index, value);
+            }
         }
         Ok(())
     }
@@ -436,7 +537,13 @@ impl TrackedList {
 
         let value = self.inner.remove(idx);
         if let Ok(mut engine) = self.engine.try_borrow_mut(py) {
-            engine.log_list_pop(self.name.clone(), idx, value.clone());
+            if !engine
+                .owner
+                .getattr(py, "_restoring")?
+                .extract::<bool>(py)?
+            {
+                engine.log_list_pop(self.name.clone(), idx, value.clone());
+            }
         }
         Ok(value)
     }
@@ -479,7 +586,13 @@ impl TrackedDict {
         self.inner.insert(key.clone(), value.clone());
 
         if let Ok(mut engine) = self.engine.try_borrow_mut(py) {
-            engine.log_dict_update(self.name.clone(), key.into_py(py), old_value, value);
+            if !engine
+                .owner
+                .getattr(py, "_restoring")?
+                .extract::<bool>(py)?
+            {
+                engine.log_dict_update(self.name.clone(), key.into_py(py), old_value, value);
+            }
         }
         Ok(())
     }
@@ -487,7 +600,13 @@ impl TrackedDict {
     pub fn __delitem__(&mut self, py: Python, key: String) -> PyResult<()> {
         if let Some(old_value) = self.inner.remove(&key) {
             if let Ok(mut engine) = self.engine.try_borrow_mut(py) {
-                engine.log_dict_delete(self.name.clone(), key.into_py(py), old_value);
+                if !engine
+                    .owner
+                    .getattr(py, "_restoring")?
+                    .extract::<bool>(py)?
+                {
+                    engine.log_dict_delete(self.name.clone(), key.into_py(py), old_value);
+                }
             }
             Ok(())
         } else {
