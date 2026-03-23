@@ -334,6 +334,19 @@ impl TachyonEngine {
 
 impl TachyonEngine {
     fn append_node(&mut self, deltas: Vec<Operation>) {
+        match self.mode {
+            Mode::Linear => {
+                if self.current_node != self.next_node_id - 1 {
+                    for node_id in (self.current_node + 1)..self.next_node_id {
+                        self.nodes.remove(&node_id);
+                    }
+                    self.node_labels
+                        .retain(|_, &mut id| id <= self.current_node);
+                    self.next_node_id = self.current_node + 1;
+                }
+            }
+            Mode::Multiversal => {}
+        }
         let node_id = self.next_node_id;
         let new_node = StateNode {
             id: node_id,

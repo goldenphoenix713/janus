@@ -1,11 +1,10 @@
 import statistics
 import time
 
-from janus import multiverse
+from janus import MultiverseBase
 
 
-@multiverse
-class BenchTarget:
+class BenchTarget(MultiverseBase):
     def __init__(self):
         self.val = 0
 

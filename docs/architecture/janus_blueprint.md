@@ -6,15 +6,15 @@
 
 **The Platform Architecture:**
 
-* **The Face (Janus):** An elegant, tiered Python API. Users can operate in `mode="linear"` for standard undo/redo or `mode="multiversal"` for Git-like branching and merging. It includes a **Plugin Registry** to extend state-tracking to third-party classes (e.g., Pandas DataFrames, PyTorch Tensors).
+* **The Face (Janus):** An elegant, tiered Python API. Users can operate by inheriting from `TimelineBase` for standard undo/redo or `MultiverseBase` for Git-like branching and merging. It includes a **Plugin Registry** to extend state-tracking to third-party classes (e.g., Pandas DataFrames, PyTorch Tensors).
 * **The Engine (Tachyon-RS):** A cutting-edge Rust backend accessed via PyO3. It maintains a **Directed Acyclic Graph (DAG)** of object states. By treating linear history as a constrained subset of a DAG, the engine remains unified. It logs bi-directional operations and opaque "Plugin Blobs" to achieve $O(1)$ performance overhead.
 
 ### Key Architectural Pillars
 
-1. **Tiered Complexity:** `@janus(mode="linear" | "multiversal")` allows developers to opt-in to complexity.
+1. **Tiered Complexity:** Inheriting from `TimelineBase` vs `MultiverseBase` allows developers to opt-in to complexity.
 2. **Extensible Plugin System:** An `AdapterRegistry` allows developers to define custom delta-calculators and inverse-appliers for unsupported types, feeding opaque blobs to the Rust engine.
 3. **Timeline Extraction:** The ability to flatten a complex multiversal path into a single linear sequence of events.
-4. **Tombstone Strategy (Memory Safety):** Rust stores `PyWeakref` (weak references) for complex objects, allowing Python's Garbage Collector to function normally.
+4. **Tombstones**: If a `jump_to()` or `undo()` encounters a cleared WeakRef (meaning the object was garbage collected by Python), Tachyon marks that branch as "collapsed" and prevents invalid memory access.
 
 ---
 
@@ -31,7 +31,7 @@ janus/
 │   └── containers.rs
 ├── janus/
 │   ├── __init__.py
-│   ├── decorators.py         # mode-aware @janus decorator
+│   ├── base.py         # JanusBase, TimelineBase, MultiverseBase
 │   └── registry.py           # Plugin AdapterRegistry for 3rd-party types
 └── tests/
     ├── __init__.py
@@ -107,7 +107,7 @@ pub enum Operation {
 #[derive(Clone)]
 pub struct StateNode {
     pub id: usize,
-    pub parent_id: Option<usize>,
+    pub parents: Vec<usize>,
     pub deltas: Vec<Operation>,
 }
 
@@ -139,10 +139,10 @@ impl TachyonEngine {
 
     pub fn log_op(&mut self, op: Operation) {
         // Creates a new node and edge.
-        // If mode == "linear", it overwrites future nodes if we went back in time.
+        // If mode == "linear", it may prune future history if we were in an "undone" state.
         let new_node = StateNode {
             id: self.next_node_id,
-            parent_id: Some(self.current_node),
+            parents: vec![self.current_node],
             deltas: vec![op],
         };
         self.nodes.insert(self.next_node_id, new_node);

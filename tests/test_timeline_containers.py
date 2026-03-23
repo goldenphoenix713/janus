@@ -1,11 +1,11 @@
 import pytest
 
-from janus import multiverse
+from janus import MultiverseBase
 
 
-@multiverse
-class Inventory:
+class Inventory(MultiverseBase):
     def __init__(self):
+        super().__init__()
         self.items = []
 
 
@@ -40,9 +40,9 @@ def test_list_reversion():
     assert len(inv.items) == 0
 
 
-@multiverse
-class Config:
+class Config(MultiverseBase):
     def __init__(self):
+        super().__init__()
         self.settings = {}
 
 

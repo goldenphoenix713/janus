@@ -1,9 +1,9 @@
-from janus import multiverse
+from janus import MultiverseBase
 
 
-@multiverse
-class Hero:
+class Hero(MultiverseBase):
     def __init__(self, name, hp):
+        super().__init__()
         self.name = name
         self.hp = hp
         self.inventory = []

@@ -95,7 +95,7 @@ This document serves as a repository for nascent ideas, experimental features, a
 
 **Potential Features**:
 
-- **Atomic Snapshots**: Create a single checkpoint that covers a group of `@janus` objects.
+- **Atomic Snapshots**: Create a single checkpoint that covers a group of Janus-based objects.
 - **Dependency Propagation**: Define parent-child relationships between objects so that state transitions in one trigger transitions in others.
 - **Global Multiverse**: A shared `TachyonEngine` instance managing the relative histories of an entire object graph.
 

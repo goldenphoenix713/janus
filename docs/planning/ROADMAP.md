@@ -8,7 +8,7 @@ This roadmap outlines the path to a full implementation of the **Janus** archite
 
 *Goal: Implement the $O(1)$ state logging for basic attributes.*
 
-- **1.1 Attribute Interception**: Complete the `@janus` decorator's `__setattr__` logic to detect changes and call the engine.
+- **1.1 Attribute Interception**: Complete the `JanusBase` class's `__setattr__` logic to detect changes and call the engine.
 - **1.2 Delta Calculation**: Implement basic delta storage for primitives (ints, strings) in `engine.rs/Operation`.
 - **1.3 Linear Mode**: Finalize `mode="linear"` to support standard undo/redo without branching.
 - **⏱️ ETA: 2 Weeks**

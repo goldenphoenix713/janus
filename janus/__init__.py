@@ -1,4 +1,10 @@
-from .decorators import multiverse, timeline
+from .base import JanusBase, MultiverseBase, TimelineBase
 from .registry import JanusAdapter, register_adapter
 
-__all__ = ["multiverse", "timeline", "register_adapter", "JanusAdapter"]
+__all__ = [
+    "register_adapter",
+    "JanusAdapter",
+    "JanusBase",
+    "MultiverseBase",
+    "TimelineBase",
+]

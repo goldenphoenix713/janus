@@ -10,7 +10,7 @@ Janus replaces the traditional "snapshot-and-copy" pattern with a **persistent d
 
 In Python, capturing the state of an object typically requires a deepcopy. As the object size $N$ increases, the time complexity for state capture scales as $O(N)$.
 
-Janus intercepts attribute mutations via the `@janus` decorator and logs these as discrete deltas in the Rust engine. Consequently, "snapshotting" (or branching) an object's state is reduced to simply recording the current `NodeId` in the engine's internal Direct Acyclic Graph (DAG). This reduces the cost of state capture from $O(N)$ to **$O(1)$**.
+Janus intercepts attribute mutations via the `JanusBase` class (inherited by `TimelineBase` and `MultiverseBase`) and logs these as discrete deltas in the Rust engine. Consequently, "snapshotting" (or branching) an object's state is reduced to simply recording the current `NodeId` in the engine's internal Direct Acyclic Graph (DAG). This reduces the cost of state capture from $O(N)$ to **$O(1)$**.
 
 ### 2. Bi-directional DAG Traversal
 

@@ -57,7 +57,7 @@ cargo clippy -- -D warnings
 
 ## Project Structure
 
-​janus/ (Python): This is the "Face." Focus here for decorator logic, proxy implementations, and high-level API improvements.
+​janus/ (Python): This is the "Face." Focus here for base class and mixin logic, proxy implementations, and high-level API improvements.
 ​src/ (Rust): This is the "Engine" (Tachyon-RS). Dive here for core delta-stack optimizations, memory safety (WeakRefs), and low-level container wrappers.
 ​
 

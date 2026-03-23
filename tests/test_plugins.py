@@ -1,4 +1,4 @@
-from janus import JanusAdapter, multiverse, register_adapter
+from janus import JanusAdapter, MultiverseBase, register_adapter
 
 
 class Data:
@@ -19,9 +19,9 @@ class CustomDataAdapter(DataAdapter):
     pass
 
 
-@multiverse
-class Database:
+class Database(MultiverseBase):
     def __init__(self):
+        super().__init__()
         self.record = None
 
 

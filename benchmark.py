@@ -3,12 +3,11 @@ import timeit
 
 import matplotlib.pyplot as plt
 
-from janus import timeline
+from janus import TimelineBase
 
 
 # 1. Define the Janus-tracked class
-@timeline
-class LargeState:
+class LargeState(TimelineBase):
     def __init__(self, size):
         self.data = list(range(size))
 

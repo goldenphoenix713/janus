@@ -1,11 +1,11 @@
 import pytest
 
-from janus import timeline
+from janus import TimelineBase
 
 
-@timeline
-class Player:
+class Player(TimelineBase):
     def __init__(self, name, hp):
+        super().__init__()
         self.name = name
         self.hp = hp
 

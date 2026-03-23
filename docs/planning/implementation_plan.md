@@ -10,7 +10,7 @@ Before laying out the work, here's where each roadmap phase actually stands toda
 
 | Phase | Roadmap Status | Actual Codebase Status |
 | :--- | :--- | :--- |
-| **P1 — Linear Foundation** | "2 Weeks" | **~95 % done.** Tiered decorators (`@timeline` / `@multiverse`) and Rust-native `undo()` / `redo()` are complete. **Gap:** "overwrite future" logic. |
+| **P1 — Linear Foundation** | "2 Weeks" | **~100 % done.** Base classes (`TimelineBase` / `MultiverseBase`) and Rust-native `undo()` / `redo()` are complete, including "overwrite future" logic. |
 | **P2 — Multiversal Branching** | "3 Weeks" | **~90 % done.** DAG nodes, moving branches, and branch management (list/current) are complete. **Gap:** `PluginOp` inverse application, merge. |
 | **P3 — Plugins & Containers** | "4 Weeks" | **~60 % done.** `TrackedList` and `TrackedDict` are logging correctly and handle `_restoring` state to prevent history pollution. |
 | **P4 — Timeline & Flattening** | "2 Weeks" | **~40 % done.** `extract_timeline` returns a flat list of dicts. **Gap:** no "history flattening / squash" (merge a branch into a linear sequence with net-effect deltas); no rich formatting or filtering; no timeline diff. |
@@ -43,23 +43,23 @@ graph TD
 
 ## Phase 1 — The Linear Foundation
 
-**Goal:** Provide a complete `mode="linear"` experience with undo/redo, "overwrite future" semantics, and a tiered decorator API.
+**Goal:** Provide a complete `TimelineBase` / `MultiverseBase` experience with undo/redo, "overwrite future" semantics, and a solid mixin-based API.
 
 ### Phase 1 Current State
 
 - `\_\_setattr\_\_` intercept → ✅ works
 - Delta logging for primitives → ✅ works (`log_update_attr`)
 - `mode="linear"` auto-advances `"main"` pointer → ✅ works
-- Tiered decorator API (`@timeline` / `@multiverse`) → ✅ works
+- Base Class API (`TimelineBase` / `MultiverseBase`) → ✅ works
 - Undo/Redo API → ✅ works (Rust-native)
-- Overwrite-future on new mutation after undo → ❌ missing
+- Overwrite-future on new mutation after undo → ✅ works
 - Linear-mode guard (prevent branch/switch to non-main) → ✅ works
 
 ---
 
 ### Waypoint 1.0 — Decorator API Refactor (`@timeline` / `@multiverse`)
 
-Rename the current monolithic `@janus(mode=...)` decorator into two purpose-built decorators — `@timeline` for linear undo/redo and `@multiverse` for full DAG branching — as specified in the [blueprint update](file:///Users/eddie/python_projects/janus/blueprint_update.md). The `@timeline` decorator should also expose a `.to_multiverse()` upgrade path.
+This was originally planned as a decorator refactor but was implemented as more robust Base Classes. `@timeline` and `@multiverse` were replaced by `TimelineBase` and `MultiverseBase` to resolve static analysis issues. This waypoint is officially **CLOSED**.
 
 #### 1.0 Deliverables
 

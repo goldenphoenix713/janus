@@ -33,7 +33,7 @@ Janus follows a strict **two-layer** architecture:
 ┌──────────────────────────────────────────────────┐
 │  THE FACE  (Python)                              │
 │  janus/                                          │
-│   ├── decorators.py   — @janus(mode=...) API     │
+│   ├── base.py         — Janus Base & Mixin Classes  │
 │   ├── registry.py     — Plugin AdapterRegistry   │
 │   └── __init__.py     — Public exports           │
 ├──────────────────────────────────────────────────┤
@@ -49,7 +49,7 @@ Janus follows a strict **two-layer** architecture:
 
 The Python layer is user-facing. It provides:
 
-- **`decorators.py`**: A class decorator factory `janus(mode=...)` that wraps any Python class to intercept `__setattr__` calls, automatically logging attribute mutations to the Rust engine. It also attaches `branch()`, `switch()`, `snapshot()`, and `extract_timeline()` methods to decorated classes.
+- **`base.py`**: Contains the `JanusBase` logic and the public mixins `TimelineBase` (linear) and `MultiverseBase` (branching). It intercepts `__setattr__` calls to log attribute mutations to the Rust engine and explicitly defines methods like `undo()`, `redo()`, and `branch()`.
 - **`registry.py`**: An `AdapterRegistry` mapping Python types to `JanusAdapter` implementations. Adapters define `get_delta(old, new) -> blob` and `apply_inverse(target, blob) -> None`, allowing third-party types (e.g., `pandas.DataFrame`) to participate in state tracking via opaque delta blobs.
 - **`tachyon_rs.pyi`**: Type stubs for the Rust extension module, providing IDE autocompletion and `mypy` compatibility.
 
@@ -202,8 +202,8 @@ janus/
 │   └── containers.rs                # Placeholder (containers live in engine.rs)
 │
 ├── janus/                           # Python source (public API)
-│   ├── __init__.py                  # Exports: janus, register_adapter, JanusAdapter
-│   ├── decorators.py                # @janus(mode=...) class decorator
+│   ├── __init__.py                  # Exports: Base Classes, register_adapter
+│   ├── base.py                      # JanusBase, TimelineBase, MultiverseBase
 │   ├── registry.py                  # AdapterRegistry + JanusAdapter Protocol
 │   ├── tachyon_rs.pyi               # Type stubs for the Rust extension
 │   ├── tachyon_rs.abi3.so           # Compiled Rust shared library (platform-specific)
@@ -396,21 +396,24 @@ uv run python tests/test_vs_deepcopy.py    # Janus vs deepcopy comparison
 
 ## 9. Current API Surface
 
-### 9.1 Decorator
+### 9.1 Base Classes
 
 ```python
-from janus import janus
+from janus import MultiverseBase, TimelineBase
 
-
-@janus(mode="multiversal")  # or mode="linear"
-class MyObject:
+class MyTimelineObj(TimelineBase):
     def __init__(self) -> None:
+        super().__init__()
         self.value = 0
+
+class MyMultiverseObj(MultiverseBase):
+    def __init__(self) -> None:
+        super().__init__()
         self.items: list[int] = []    # Auto-wrapped to TrackedList
         self.config: dict[str, str] = {}  # Auto-wrapped to TrackedDict
 ```
 
-### 9.2 Methods Injected by the Decorator
+### 9.2 Methods Provided by Base Classes
 
 | Method | Availability | Description |
 | :--- | :--- | :--- |
@@ -461,14 +464,9 @@ Verified benchmarks show **~27,000× speedup** over `copy.deepcopy()` for object
 | **P4 — Timeline & Flattening** | ~40% | No history squash, no filtering, no timeline diff |
 | **P5 — Tombstone & Memory** | 0% | No weak refs, no pruning, no memory benchmarks |
 
-### 11.2 Planned API Change: Decorator Refactor
+### 11.2 Planned API Change (Completed)
 
-The current `@janus(mode=...)` decorator is being refactored into two explicit decorators per the blueprint update:
-
-- **`@timeline`** — Linear mode with `snapshot()`, `revert()`, and a `.to_multiverse()` upgrade path.
-- **`@multiverse`** — Full DAG mode with `branch()`, `switch()`, and `extract_timeline()`.
-
-This is tracked as **Waypoint 1.0** in `docs/planning/implementation_plan.md`.
+The refactor from the `@janus` decorator to explicit `TimelineBase` and `MultiverseBase` classes is complete. This resolved static analysis issues and improved API discoverability.
 
 ---
 
@@ -476,7 +474,7 @@ This is tracked as **Waypoint 1.0** in `docs/planning/implementation_plan.md`.
 
 1. **`_restoring` flag**: During `switch_branch`, the engine sets `owner._restoring = True` to suppress `__setattr__` interception. Any code that bypasses this flag will cause infinite recursion or double-logging.
 
-2. **`_engine` bypass**: Assignments to `_engine` and `_restoring` use `object.__setattr__()` to avoid interception. Any attribute prefixed with `_` is **not logged** by the engine (see `decorators.py` line 42: `if not name.startswith("_")`).
+2. **`_engine` bypass**: Assignments to `_engine` and `_restoring` use `super().__setattr__()` or `object.__setattr__()` to avoid interception. Any attribute prefixed with `_` is **not logged** by the engine (see `base.py` line 36: `if not name.startswith("_")`).
 
 3. **Maturin develop**: After any Rust change, you **must** run `uv run maturin develop` before testing. The `.so` file is symlinked into the venv, but changes are not hot-reloaded.
 
