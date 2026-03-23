@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use std::collections::HashMap;
 
 #[derive(Clone)]
@@ -490,7 +491,30 @@ impl TachyonEngine {
                         }
                     }
                 }
-                _ => {}
+                Operation::PluginOp {
+                    path,
+                    adapter_name,
+                    delta_blob,
+                } => {
+                    let registry = py.import("janus.registry")?;
+                    let adapter_registry =
+                        registry.getattr("ADAPTER_REGISTRY")?.downcast::<PyDict>()?;
+                    for adapter in adapter_registry.values() {
+                        let type_name = adapter.get_type().name()?;
+                        if type_name == adapter_name {
+                            let method = if forward {
+                                "apply_forward"
+                            } else {
+                                "apply_inverse"
+                            };
+                            adapter.call_method1(
+                                method,
+                                (owner.getattr(path.as_str())?, delta_blob),
+                            )?;
+                            break;
+                        }
+                    }
+                }
             }
         }
         Ok(())

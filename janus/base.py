@@ -22,8 +22,11 @@ class JanusBase:
         value_type = type(value)
         if value_type in ADAPTER_REGISTRY:
             adapter = ADAPTER_REGISTRY[value_type]
-            delta_blob = adapter.get_delta(old_value, value)
+            shadow_name = f"_shadow_{name}"
+            shadow_value = getattr(self, shadow_name, None)
+            delta_blob = adapter.get_delta(shadow_value, value)
             self._engine.log_plugin_op(name, type(adapter).__name__, delta_blob)
+            super().__setattr__(shadow_name, adapter.get_snapshot(value))
         elif isinstance(value, list):
             # TrackedList will handle its own internal mutations,
             # but initial assignment is logged as an attribute update.
