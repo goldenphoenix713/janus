@@ -44,14 +44,13 @@ The engine is implemented using an adjacency list to manage the graph nodes effi
 pub enum Operation {
     UpdateAttr { name: String, old_value: PyObject, new_value: PyObject },
     ListMutation { path: String, index: usize, op_type: ListOpType },
-    // ...
+    PluginOp { path: String, adapter_name: String, delta_blob: PyObject },
 }
 
 pub struct StateNode {
-    id: usize,
-    parent: Option<usize>,
-    children: Vec<usize>,
-    deltas: Vec<Operation>, // Transitions from parent to this node
+    pub id: usize,
+    pub parents: Vec<usize>,
+    pub deltas: Vec<Operation>,
 }
 ```
 

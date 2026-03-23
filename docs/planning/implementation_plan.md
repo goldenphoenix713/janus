@@ -11,7 +11,7 @@ Before laying out the work, here's where each roadmap phase actually stands toda
 | Phase | Roadmap Status | Actual Codebase Status |
 | :--- | :--- | :--- |
 | **P1 — Linear Foundation** | "2 Weeks" | **~100 % done.** Base classes (`TimelineBase` / `MultiverseBase`) and Rust-native `undo()` / `redo()` are complete, including "overwrite future" logic. |
-| **P2 — Multiversal Branching** | "3 Weeks" | **~90 % done.** DAG nodes, moving branches, and branch management (list/current) are complete. **Gap:** `PluginOp` inverse application, merge. |
+| **P2 — Multiversal Branching** | "3 Weeks" | **~95 % done.** DAG nodes, branching, and bidirectional `PluginOp` application (including Shadow Snapshots) are complete. **Gap:** merge logic. |
 | **P3 — Plugins & Containers** | "4 Weeks" | **~60 % done.** `TrackedList` and `TrackedDict` are logging correctly and handle `_restoring` state to prevent history pollution. |
 | **P4 — Timeline & Flattening** | "2 Weeks" | **~40 % done.** `extract_timeline` returns a flat list of dicts. **Gap:** no "history flattening / squash" (merge a branch into a linear sequence with net-effect deltas); no rich formatting or filtering; no timeline diff. |
 | **P5 — Tombstone & Memory** | "2 Weeks" | **0 % done.** No weak refs, no pruning, no benchmarks for memory. |
@@ -170,17 +170,18 @@ Prevent calling `branch()`, `switch()` (to non-`"main"` labels), and `extract_ti
 
 ---
 
-### Waypoint 2.1 — `PluginOp` Inverse Application
+### Waypoint 2.1 — `PluginOp` Bidirectional Application
 
-The `apply_node_deltas` function in `engine.rs` has a `_ => {}` wildcard that silently drops `PluginOp` during `switch_branch`. This must call back into the Python adapter's `apply_inverse`.
+The `apply_node_deltas` function in `engine.rs` now correctly handles `PluginOp` by calling back into the Python adapter for both forward and inverse transitions. Additionally, `JanusBase` now uses a "Shadow Snapshot" mechanism to correctly capture deltas for in-place mutated objects. This waypoint is officially **CLOSED**.
 
 #### 2.1 Deliverables
 
 | # | Item | File(s) | Description |
 | :--- | :--- | :--- | :--- |
-| 1 | Rust callback | `engine.rs` | Replace `_ => {}` with logic: look up the `adapter_name` in Python's `ADAPTER_REGISTRY`, call `apply_inverse(target, delta_blob)`. |
-| 2 | Registry import | `engine.rs` | Use `PyModule::import` to access `janus.registry.ADAPTER_REGISTRY` from Rust. |
-| 3 | Tests | `tests/test_plugins.py` | Extend to verify round-trip: set a `Data` attribute → branch → change → switch back → assert original via adapter. |
+| 1 | Rust callback | `engine.rs` | Implemented: `PluginOp` handling calls `apply_forward` or `apply_inverse` on the adapter. |
+| 2 | Shadow Snapshots | `base.py` | Implemented: `_shadow_` attributes stash the last known state for accurate delta calculation. |
+| 3 | Protocol Expansion | `registry.py` | Implemented: Added `apply_forward` and `get_snapshot` to `JanusAdapter`. |
+| 4 | Tests | `tests/test_plugins.py` | Verified: Both reference-swap and in-place mutation tests pass. |
 
 #### 2.1 Estimates
 

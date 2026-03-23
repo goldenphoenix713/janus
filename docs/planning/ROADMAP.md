@@ -19,10 +19,10 @@ This roadmap outlines the path to a full implementation of the **Janus** archite
 
 *Goal: Implement the "Git-like" API for object states.*
 
-- **2.1 Directed Acyclic Graph (DAG)**: Fully implement `StateNode` parent-child relationships in Rust.
-- **2.2 Branch Management**: Implement `create_branch(label)` and `switch_branch(label)` in `TachyonEngine`.
-- **2.3 State Restoration**: Implement the logic to "revert" an object's attributes by applying inverse deltas during branch switching.
-- **⏱️ ETA: 3 Weeks**
+- **2.1 Directed Acyclic Graph (DAG)**: Fully implement `StateNode` parent-child relationships in Rust. ✅
+- **2.2 Branch Management**: Implement `create_branch(label)` and `switch_branch(label)` in `TachyonEngine`. ✅
+- **2.3 State Restoration**: Implement the logic to "revert" an object's attributes by applying inverse deltas during branch switching. ✅ (Including `PluginOp` support!)
+- **⏱️ ETA: Complete (95%)**
 
 ---
 
