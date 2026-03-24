@@ -7,7 +7,7 @@ mod engine;
 #[pymodule]
 fn tachyon_rs(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<engine::TachyonEngine>()?;
-    m.add_class::<engine::TrackedList>()?;
-    m.add_class::<engine::TrackedDict>()?;
+    m.add_class::<containers::TrackedList>()?;
+    m.add_class::<containers::TrackedDict>()?;
     Ok(())
 }

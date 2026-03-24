@@ -71,8 +71,18 @@ class MultiverseBase(JanusBase):
     def __init__(self, *args, **kwargs):
         super().__init__("multiversal")
 
+    @property
+    def current_branch(self):
+        return self._engine.current_branch
+
     def branch(self, label: str):
         self._engine.create_branch(label)
+
+    def list_branches(self):
+        return self._engine.list_branches()
+
+    def list_nodes(self):
+        return self._engine.list_nodes()
 
     def create_moment_label(self, label: str):
         """Alias for branch() to stay compatible with brainstorming terminology."""
@@ -80,3 +90,6 @@ class MultiverseBase(JanusBase):
 
     def extract_timeline(self, label: str):
         return self._engine.extract_timeline(label)
+
+    def delete_branch(self, label: str):
+        self._engine.delete_branch(label)

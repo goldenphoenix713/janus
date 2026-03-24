@@ -19,6 +19,24 @@ pub enum Operation {
         index: usize,
         value: PyObject,
     },
+    ListReplace {
+        path: String,
+        index: usize,
+        old_value: PyObject,
+        new_value: PyObject,
+    },
+    ListClear {
+        path: String,
+        old_values: Vec<PyObject>,
+    },
+    ListExtend {
+        path: String,
+        new_values: Vec<PyObject>,
+    },
+    ListRemove {
+        path: String,
+        value: PyObject,
+    },
     DictUpdate {
         path: String,
         key: PyObject,
@@ -57,7 +75,7 @@ pub struct StateNode {
 
 #[pyclass]
 pub struct TachyonEngine {
-    owner: Py<PyAny>,
+    pub owner: Py<PyAny>,
     nodes: HashMap<usize, StateNode>,
     node_labels: HashMap<String, usize>,
     active_branch: String,
@@ -253,6 +271,33 @@ impl TachyonEngine {
                             op_dict.set_item("index", index)?;
                             op_dict.set_item("value", value)?;
                         }
+                        Operation::ListReplace {
+                            path,
+                            index,
+                            old_value,
+                            new_value,
+                        } => {
+                            op_dict.set_item("type", "ListReplace")?;
+                            op_dict.set_item("path", path)?;
+                            op_dict.set_item("index", index)?;
+                            op_dict.set_item("old", old_value)?;
+                            op_dict.set_item("new", new_value)?;
+                        }
+                        Operation::ListClear { path, old_values } => {
+                            op_dict.set_item("type", "ListClear")?;
+                            op_dict.set_item("path", path)?;
+                            op_dict.set_item("old_values", old_values)?;
+                        }
+                        Operation::ListExtend { path, new_values } => {
+                            op_dict.set_item("type", "ListExtend")?;
+                            op_dict.set_item("path", path)?;
+                            op_dict.set_item("new_values", new_values)?;
+                        }
+                        Operation::ListRemove { path, value } => {
+                            op_dict.set_item("type", "ListRemove")?;
+                            op_dict.set_item("path", path)?;
+                            op_dict.set_item("value", value)?;
+                        }
                         Operation::DictUpdate {
                             path,
                             key,
@@ -307,6 +352,37 @@ impl TachyonEngine {
         self.append_node(vec![op]);
     }
 
+    pub fn log_list_replace(
+        &mut self,
+        path: String,
+        index: usize,
+        old_val: PyObject,
+        new_val: PyObject,
+    ) {
+        let replace = Operation::ListReplace {
+            path: path.clone(),
+            index,
+            old_value: old_val,
+            new_value: new_val,
+        };
+        self.append_node(vec![replace]);
+    }
+
+    pub fn log_list_clear(&mut self, path: String, old_values: Vec<PyObject>) {
+        let op = Operation::ListClear { path, old_values };
+        self.append_node(vec![op]);
+    }
+
+    pub fn log_list_extend(&mut self, path: String, new_values: Vec<PyObject>) {
+        let op = Operation::ListExtend { path, new_values };
+        self.append_node(vec![op]);
+    }
+
+    pub fn log_list_remove(&mut self, path: String, value: PyObject) {
+        let op = Operation::ListRemove { path, value };
+        self.append_node(vec![op]);
+    }
+
     pub fn log_dict_update(
         &mut self,
         path: String,
@@ -330,6 +406,24 @@ impl TachyonEngine {
             old_value,
         };
         self.append_node(vec![op]);
+    }
+
+    fn delete_branch(&mut self, label: String) -> PyResult<()> {
+        if label == self.active_branch {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "Cannot delete active branch: '{}'",
+                label
+            )));
+        }
+
+        if self.branch_labels.remove(&label).is_none() {
+            return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                "Branch '{}' not found",
+                label
+            )));
+        }
+
+        Ok(())
     }
 }
 
@@ -462,6 +556,53 @@ impl TachyonEngine {
                         }
                     }
                 }
+                Operation::ListReplace {
+                    path,
+                    index,
+                    old_value,
+                    new_value,
+                } => {
+                    if let Ok(list_attr) = owner.getattr(path.as_str()) {
+                        if forward {
+                            list_attr.call_method1("__setitem__", (*index, new_value))?;
+                        } else {
+                            list_attr.call_method1("__setitem__", (*index, old_value))?;
+                        }
+                    }
+                }
+                Operation::ListClear { path, old_values } => {
+                    if let Ok(list_attr) = owner.getattr(path.as_str()) {
+                        if forward {
+                            list_attr.call_method1("clear", ())?;
+                        } else {
+                            let list = pyo3::types::PyList::new(py, old_values);
+                            list_attr.call_method1("extend", (list,))?;
+                        }
+                    }
+                }
+                Operation::ListExtend { path, new_values } => {
+                    if let Ok(list_attr) = owner.getattr(path.as_str()) {
+                        if forward {
+                            let list = pyo3::types::PyList::new(py, new_values);
+                            list_attr.call_method1("extend", (list,))?;
+                        } else {
+                            for value in new_values.iter().rev() {
+                                list_attr.call_method1("remove", (value,))?;
+                            }
+                        }
+                    }
+                }
+                Operation::ListRemove { path, value } => {
+                    if let Ok(list_attr) = owner.getattr(path.as_str()) {
+                        if forward {
+                            list_attr.call_method1("remove", (value,))?;
+                        } else {
+                            // Note: This is a best-effort undo if index isn't known.
+                            // Ideally we log removals as ListPop with index.
+                            list_attr.call_method1("append", (value,))?;
+                        }
+                    }
+                }
                 Operation::DictUpdate {
                     path,
                     key,
@@ -518,170 +659,5 @@ impl TachyonEngine {
             }
         }
         Ok(())
-    }
-}
-
-#[pyclass]
-pub struct TrackedList {
-    inner: Vec<PyObject>,
-    engine: Py<TachyonEngine>,
-    name: String,
-}
-
-#[pymethods]
-impl TrackedList {
-    #[new]
-    pub fn new(initial: Vec<PyObject>, engine: Py<TachyonEngine>, name: String) -> Self {
-        TrackedList {
-            inner: initial,
-            engine,
-            name,
-        }
-    }
-
-    pub fn append(&mut self, py: Python, value: PyObject) -> PyResult<()> {
-        let index = self.inner.len();
-        self.inner.push(value.clone());
-        if let Ok(mut engine) = self.engine.try_borrow_mut(py) {
-            if !engine
-                .owner
-                .getattr(py, "_restoring")?
-                .extract::<bool>(py)?
-            {
-                engine.log_list_insert(self.name.clone(), index, value);
-            }
-        }
-        Ok(())
-    }
-
-    pub fn pop(&mut self, py: Python, index: Option<isize>) -> PyResult<PyObject> {
-        let idx = match index {
-            Some(i) => {
-                (if i < 0 {
-                    self.inner.len() as isize + i
-                } else {
-                    i
-                }) as usize
-            }
-            None => self.inner.len() - 1,
-        };
-
-        if idx >= self.inner.len() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
-                "pop index out of range",
-            ));
-        }
-
-        let value = self.inner.remove(idx);
-        if let Ok(mut engine) = self.engine.try_borrow_mut(py) {
-            if !engine
-                .owner
-                .getattr(py, "_restoring")?
-                .extract::<bool>(py)?
-            {
-                engine.log_list_pop(self.name.clone(), idx, value.clone());
-            }
-        }
-        Ok(value)
-    }
-
-    pub fn __getitem__(&self, index: usize) -> PyResult<PyObject> {
-        self.inner.get(index).cloned().ok_or_else(|| {
-            PyErr::new::<pyo3::exceptions::PyIndexError, _>("list index out of range")
-        })
-    }
-
-    pub fn __len__(&self) -> usize {
-        self.inner.len()
-    }
-}
-
-#[pyclass]
-pub struct TrackedDict {
-    inner: HashMap<String, PyObject>, // For now, keys are Strings for simplicity
-    engine: Py<TachyonEngine>,
-    name: String,
-}
-
-#[pymethods]
-impl TrackedDict {
-    #[new]
-    pub fn new(
-        initial: HashMap<String, PyObject>,
-        engine: Py<TachyonEngine>,
-        name: String,
-    ) -> Self {
-        TrackedDict {
-            inner: initial,
-            engine,
-            name,
-        }
-    }
-
-    pub fn __setitem__(&mut self, py: Python, key: String, value: PyObject) -> PyResult<()> {
-        let old_value = self.inner.get(&key).cloned().unwrap_or_else(|| py.None());
-        self.inner.insert(key.clone(), value.clone());
-
-        if let Ok(mut engine) = self.engine.try_borrow_mut(py) {
-            if !engine
-                .owner
-                .getattr(py, "_restoring")?
-                .extract::<bool>(py)?
-            {
-                engine.log_dict_update(self.name.clone(), key.into_py(py), old_value, value);
-            }
-        }
-        Ok(())
-    }
-
-    pub fn __delitem__(&mut self, py: Python, key: String) -> PyResult<()> {
-        if let Some(old_value) = self.inner.remove(&key) {
-            if let Ok(mut engine) = self.engine.try_borrow_mut(py) {
-                if !engine
-                    .owner
-                    .getattr(py, "_restoring")?
-                    .extract::<bool>(py)?
-                {
-                    engine.log_dict_delete(self.name.clone(), key.into_py(py), old_value);
-                }
-            }
-            Ok(())
-        } else {
-            Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(key))
-        }
-    }
-
-    pub fn __getitem__(&self, key: String) -> PyResult<PyObject> {
-        self.inner
-            .get(&key)
-            .cloned()
-            .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyKeyError, _>(key))
-    }
-
-    pub fn __contains__(&self, key: String) -> bool {
-        self.inner.contains_key(&key)
-    }
-
-    pub fn __iter__(slf: PyRef<'_, Self>) -> PyResult<PyObject> {
-        let py = slf.py();
-        let keys: Vec<String> = slf.inner.keys().cloned().collect();
-        let list = pyo3::types::PyList::new(py, keys.into_iter().map(|k| k.into_py(py)));
-        Ok(list.call_method0("__iter__")?.to_object(py))
-    }
-
-    pub fn keys(&self, py: Python) -> PyResult<PyObject> {
-        let keys: Vec<String> = self.inner.keys().cloned().collect();
-        Ok(pyo3::types::PyList::new(py, keys.into_iter().map(|k| k.into_py(py))).to_object(py))
-    }
-
-    pub fn __len__(&self) -> usize {
-        self.inner.len()
-    }
-
-    pub fn get(&self, py: Python, key: String, default: Option<PyObject>) -> PyObject {
-        self.inner
-            .get(&key)
-            .cloned()
-            .unwrap_or_else(|| default.unwrap_or_else(|| py.None()))
     }
 }

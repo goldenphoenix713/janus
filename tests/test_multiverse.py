@@ -1,3 +1,5 @@
+import pytest
+
 from janus import MultiverseBase
 
 
@@ -19,3 +21,38 @@ def test_basic_branching():
 
     h.jump_to("main")  # type: ignore
     # assert h.hp == 100 # This will fail until apply_inverse is implemented
+
+
+def test_delete_branch():
+    h = Hero("Arthur", 100)
+    h.branch("chaos-timeline")
+    h.hp = 50
+    assert h.hp == 50
+    assert h.current_branch == "chaos-timeline"
+    assert "chaos-timeline" in h.list_branches()
+    assert "main" in h.list_branches()
+    assert len(h.list_branches()) == 2
+
+    h.jump_to("main")
+    assert h.hp == 100
+    assert h.current_branch == "main"
+
+    h.delete_branch("chaos-timeline")
+    assert h.current_branch == "main"
+    assert h.hp == 100
+    assert h.list_branches() == ["main"]
+
+
+def test_cannot_delete_active_branch():
+    h = Hero("Arthur", 100)
+    h.branch("chaos-timeline")
+    with pytest.raises(ValueError) as e:
+        h.delete_branch("chaos-timeline")
+    assert e.value.args[0] == "Cannot delete active branch: 'chaos-timeline'"
+
+
+def test_cannot_delete_nonexistent_branch():
+    h = Hero("Arthur", 100)
+    with pytest.raises(KeyError) as excinfo:
+        h.delete_branch("nonexistent-branch")
+    assert excinfo.value.args[0] == "Branch 'nonexistent-branch' not found"
