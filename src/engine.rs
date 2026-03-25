@@ -9,50 +9,80 @@ pub enum Operation {
         old_value: PyObject,
         new_value: PyObject,
     },
-    ListPop {
-        path: String,
-        index: usize,
-        popped_value: PyObject,
-    },
-    ListInsert {
-        path: String,
-        index: usize,
-        value: PyObject,
-    },
-    ListReplace {
-        path: String,
-        index: usize,
-        old_value: PyObject,
-        new_value: PyObject,
-    },
-    ListClear {
-        path: String,
-        old_values: Vec<PyObject>,
-    },
-    ListExtend {
-        path: String,
-        new_values: Vec<PyObject>,
-    },
-    ListRemove {
-        path: String,
-        value: PyObject,
-    },
-    DictUpdate {
-        path: String,
-        key: PyObject,
-        old_value: PyObject,
-        new_value: PyObject,
-    },
-    DictDelete {
-        path: String,
-        key: PyObject,
-        old_value: PyObject,
-    },
+    ListOp(ListOperation),
+    DictOp(DictOperation),
     // THE FOUNDATION FOR PLUGINS:
     PluginOp {
         path: String,
         adapter_name: String,
         delta_blob: PyObject,
+    },
+}
+
+#[derive(Clone)]
+pub enum ListOperation {
+    Insert {
+        path: String,
+        index: usize,
+        value: PyObject,
+    },
+    Pop {
+        path: String,
+        index: usize,
+        popped_value: PyObject,
+    },
+    Replace {
+        path: String,
+        index: usize,
+        old_value: PyObject,
+        new_value: PyObject,
+    },
+    Clear {
+        path: String,
+        old_values: Vec<PyObject>,
+    },
+    Extend {
+        path: String,
+        new_values: Vec<PyObject>,
+    },
+    Remove {
+        path: String,
+        value: PyObject,
+    },
+}
+
+#[derive(Clone)]
+pub enum DictOperation {
+    Clear {
+        path: String,
+        keys: Vec<String>,
+        old_values: Vec<PyObject>,
+    },
+    Pop {
+        path: String,
+        key: String,
+        old_value: PyObject,
+    },
+    PopItem {
+        path: String,
+        key: String,
+        old_value: PyObject,
+    },
+    SetDefault {
+        path: String,
+        key: String,
+        value: PyObject,
+    },
+    Update {
+        path: String,
+        keys: Vec<String>,
+        old_values: Vec<PyObject>,
+        new_values: Vec<PyObject>,
+    },
+    Delete {
+        path: String,
+        key: String,
+        old_value: PyObject,
     },
 }
 
@@ -255,66 +285,102 @@ impl TachyonEngine {
                             op_dict.set_item("old", old_value)?;
                             op_dict.set_item("new", new_value)?;
                         }
-                        Operation::ListPop {
+                        Operation::ListOp(ListOperation::Pop {
                             path,
                             index,
                             popped_value,
-                        } => {
+                        }) => {
                             op_dict.set_item("type", "ListPop")?;
                             op_dict.set_item("path", path)?;
                             op_dict.set_item("index", index)?;
                             op_dict.set_item("value", popped_value)?;
                         }
-                        Operation::ListInsert { path, index, value } => {
+                        Operation::ListOp(ListOperation::Insert { path, index, value }) => {
                             op_dict.set_item("type", "ListInsert")?;
                             op_dict.set_item("path", path)?;
                             op_dict.set_item("index", index)?;
                             op_dict.set_item("value", value)?;
                         }
-                        Operation::ListReplace {
+                        Operation::ListOp(ListOperation::Replace {
                             path,
                             index,
                             old_value,
                             new_value,
-                        } => {
+                        }) => {
                             op_dict.set_item("type", "ListReplace")?;
                             op_dict.set_item("path", path)?;
                             op_dict.set_item("index", index)?;
                             op_dict.set_item("old", old_value)?;
                             op_dict.set_item("new", new_value)?;
                         }
-                        Operation::ListClear { path, old_values } => {
+                        Operation::ListOp(ListOperation::Clear { path, old_values }) => {
                             op_dict.set_item("type", "ListClear")?;
                             op_dict.set_item("path", path)?;
                             op_dict.set_item("old_values", old_values)?;
                         }
-                        Operation::ListExtend { path, new_values } => {
+                        Operation::ListOp(ListOperation::Extend { path, new_values }) => {
                             op_dict.set_item("type", "ListExtend")?;
                             op_dict.set_item("path", path)?;
                             op_dict.set_item("new_values", new_values)?;
                         }
-                        Operation::ListRemove { path, value } => {
+                        Operation::ListOp(ListOperation::Remove { path, value }) => {
                             op_dict.set_item("type", "ListRemove")?;
                             op_dict.set_item("path", path)?;
                             op_dict.set_item("value", value)?;
                         }
-                        Operation::DictUpdate {
+                        Operation::DictOp(DictOperation::Clear {
+                            path,
+                            keys,
+                            old_values,
+                        }) => {
+                            op_dict.set_item("type", "DictClear")?;
+                            op_dict.set_item("path", path)?;
+                            op_dict.set_item("keys", keys)?;
+                            op_dict.set_item("old_values", old_values)?;
+                        }
+                        Operation::DictOp(DictOperation::Pop {
                             path,
                             key,
                             old_value,
-                            new_value,
-                        } => {
-                            op_dict.set_item("type", "DictUpdate")?;
+                        }) => {
+                            op_dict.set_item("type", "DictPop")?;
                             op_dict.set_item("path", path)?;
                             op_dict.set_item("key", key)?;
-                            op_dict.set_item("old", old_value)?;
-                            op_dict.set_item("new", new_value)?;
+                            op_dict.set_item("old_value", old_value)?;
                         }
-                        Operation::DictDelete {
+                        Operation::DictOp(DictOperation::PopItem {
                             path,
                             key,
                             old_value,
-                        } => {
+                        }) => {
+                            op_dict.set_item("type", "DictPopItem")?;
+                            op_dict.set_item("path", path)?;
+                            op_dict.set_item("key", key)?;
+                            op_dict.set_item("old_value", old_value)?;
+                        }
+                        Operation::DictOp(DictOperation::SetDefault { path, key, value }) => {
+                            op_dict.set_item("type", "DictSetDefault")?;
+                            op_dict.set_item("path", path)?;
+                            op_dict.set_item("key", key)?;
+                            op_dict.set_item("value", value)?;
+                        }
+                        Operation::DictOp(DictOperation::Update {
+                            path,
+                            keys,
+                            old_values,
+                            new_values,
+                        }) => {
+                            op_dict.set_item("type", "DictUpdate")?;
+                            op_dict.set_item("path", path)?;
+                            op_dict.set_item("keys", keys)?;
+                            op_dict.set_item("old", old_values)?;
+                            op_dict.set_item("new", new_values)?;
+                        }
+                        Operation::DictOp(DictOperation::Delete {
+                            path,
+                            key,
+                            old_value,
+                        }) => {
                             op_dict.set_item("type", "DictDelete")?;
                             op_dict.set_item("path", path)?;
                             op_dict.set_item("key", key)?;
@@ -339,16 +405,16 @@ impl TachyonEngine {
     }
 
     pub fn log_list_pop(&mut self, path: String, index: usize, popped_value: PyObject) {
-        let op = Operation::ListPop {
+        let op = Operation::ListOp(ListOperation::Pop {
             path,
             index,
             popped_value,
-        };
+        });
         self.append_node(vec![op]);
     }
 
     pub fn log_list_insert(&mut self, path: String, index: usize, value: PyObject) {
-        let op = Operation::ListInsert { path, index, value };
+        let op = Operation::ListOp(ListOperation::Insert { path, index, value });
         self.append_node(vec![op]);
     }
 
@@ -359,52 +425,84 @@ impl TachyonEngine {
         old_val: PyObject,
         new_val: PyObject,
     ) {
-        let replace = Operation::ListReplace {
+        let replace = Operation::ListOp(ListOperation::Replace {
             path: path.clone(),
             index,
             old_value: old_val,
             new_value: new_val,
-        };
+        });
         self.append_node(vec![replace]);
     }
 
     pub fn log_list_clear(&mut self, path: String, old_values: Vec<PyObject>) {
-        let op = Operation::ListClear { path, old_values };
+        let op = Operation::ListOp(ListOperation::Clear { path, old_values });
         self.append_node(vec![op]);
     }
 
     pub fn log_list_extend(&mut self, path: String, new_values: Vec<PyObject>) {
-        let op = Operation::ListExtend { path, new_values };
+        let op = Operation::ListOp(ListOperation::Extend { path, new_values });
         self.append_node(vec![op]);
     }
 
     pub fn log_list_remove(&mut self, path: String, value: PyObject) {
-        let op = Operation::ListRemove { path, value };
+        let op = Operation::ListOp(ListOperation::Remove { path, value });
+        self.append_node(vec![op]);
+    }
+
+    pub fn log_dict_clear(&mut self, path: String, keys: Vec<String>, old_values: Vec<PyObject>) {
+        let op = Operation::DictOp(DictOperation::Clear {
+            path,
+            keys,
+            old_values,
+        });
+        self.append_node(vec![op]);
+    }
+
+    pub fn log_dict_pop(&mut self, path: String, key: String, old_value: PyObject) {
+        let op = Operation::DictOp(DictOperation::Pop {
+            path,
+            key,
+            old_value,
+        });
+        self.append_node(vec![op]);
+    }
+
+    pub fn log_dict_popitem(&mut self, path: String, key: String, old_value: PyObject) {
+        let op = Operation::DictOp(DictOperation::PopItem {
+            path,
+            key,
+            old_value,
+        });
+        self.append_node(vec![op]);
+    }
+
+    pub fn log_dict_setdefault(&mut self, path: String, key: String, value: PyObject) {
+        let op = Operation::DictOp(DictOperation::SetDefault { path, key, value });
         self.append_node(vec![op]);
     }
 
     pub fn log_dict_update(
         &mut self,
         path: String,
-        key: PyObject,
-        old_value: PyObject,
-        new_value: PyObject,
+        keys: Vec<String>,
+        old_values: Vec<PyObject>,
+        new_values: Vec<PyObject>,
     ) {
-        let op = Operation::DictUpdate {
+        let op = Operation::DictOp(DictOperation::Update {
             path,
-            key,
-            old_value,
-            new_value,
-        };
+            keys,
+            old_values,
+            new_values,
+        });
         self.append_node(vec![op]);
     }
 
-    pub fn log_dict_delete(&mut self, path: String, key: PyObject, old_value: PyObject) {
-        let op = Operation::DictDelete {
+    pub fn log_dict_delete(&mut self, path: String, key: String, old_value: PyObject) {
+        let op = Operation::DictOp(DictOperation::Delete {
             path,
             key,
             old_value,
-        };
+        });
         self.append_node(vec![op]);
     }
 
@@ -534,11 +632,11 @@ impl TachyonEngine {
                     let val = if forward { new_value } else { old_value };
                     owner.setattr(name.as_str(), val)?;
                 }
-                Operation::ListPop {
+                Operation::ListOp(ListOperation::Pop {
                     path,
                     index,
                     popped_value,
-                } => {
+                }) => {
                     if let Ok(list_attr) = owner.getattr(path.as_str()) {
                         if forward {
                             list_attr.call_method1("pop", (*index,))?;
@@ -547,7 +645,7 @@ impl TachyonEngine {
                         }
                     }
                 }
-                Operation::ListInsert { path, index, value } => {
+                Operation::ListOp(ListOperation::Insert { path, index, value }) => {
                     if let Ok(list_attr) = owner.getattr(path.as_str()) {
                         if forward {
                             list_attr.call_method1("insert", (*index, value))?;
@@ -556,12 +654,12 @@ impl TachyonEngine {
                         }
                     }
                 }
-                Operation::ListReplace {
+                Operation::ListOp(ListOperation::Replace {
                     path,
                     index,
                     old_value,
                     new_value,
-                } => {
+                }) => {
                     if let Ok(list_attr) = owner.getattr(path.as_str()) {
                         if forward {
                             list_attr.call_method1("__setitem__", (*index, new_value))?;
@@ -570,7 +668,7 @@ impl TachyonEngine {
                         }
                     }
                 }
-                Operation::ListClear { path, old_values } => {
+                Operation::ListOp(ListOperation::Clear { path, old_values }) => {
                     if let Ok(list_attr) = owner.getattr(path.as_str()) {
                         if forward {
                             list_attr.call_method1("clear", ())?;
@@ -580,7 +678,7 @@ impl TachyonEngine {
                         }
                     }
                 }
-                Operation::ListExtend { path, new_values } => {
+                Operation::ListOp(ListOperation::Extend { path, new_values }) => {
                     if let Ok(list_attr) = owner.getattr(path.as_str()) {
                         if forward {
                             let list = pyo3::types::PyList::new(py, new_values);
@@ -592,7 +690,7 @@ impl TachyonEngine {
                         }
                     }
                 }
-                Operation::ListRemove { path, value } => {
+                Operation::ListOp(ListOperation::Remove { path, value }) => {
                     if let Ok(list_attr) = owner.getattr(path.as_str()) {
                         if forward {
                             list_attr.call_method1("remove", (value,))?;
@@ -603,27 +701,81 @@ impl TachyonEngine {
                         }
                     }
                 }
-                Operation::DictUpdate {
+                Operation::DictOp(DictOperation::Clear {
+                    path,
+                    keys,
+                    old_values,
+                }) => {
+                    if let Ok(dict_attr) = owner.getattr(path.as_str()) {
+                        if forward {
+                            dict_attr.call_method0("clear")?;
+                        } else {
+                            for (key, value) in keys.iter().zip(old_values.iter()).rev() {
+                                dict_attr.call_method1("__setitem__", (key, value))?;
+                            }
+                        }
+                    }
+                }
+                Operation::DictOp(DictOperation::Pop {
                     path,
                     key,
                     old_value,
-                    new_value,
-                } => {
+                }) => {
                     if let Ok(dict_attr) = owner.getattr(path.as_str()) {
                         if forward {
-                            dict_attr.call_method1("__setitem__", (key, new_value))?;
-                        } else if old_value.is_none(py) {
-                            dict_attr.call_method1("__delitem__", (key,))?;
+                            dict_attr.call_method1("pop", (key,))?;
                         } else {
                             dict_attr.call_method1("__setitem__", (key, old_value))?;
                         }
                     }
                 }
-                Operation::DictDelete {
+                Operation::DictOp(DictOperation::PopItem {
                     path,
                     key,
                     old_value,
-                } => {
+                }) => {
+                    if let Ok(dict_attr) = owner.getattr(path.as_str()) {
+                        if forward {
+                            dict_attr.call_method0("popitem")?;
+                        } else {
+                            dict_attr.call_method1("__setitem__", (key, old_value))?;
+                        }
+                    }
+                }
+                Operation::DictOp(DictOperation::SetDefault { path, key, value }) => {
+                    if let Ok(dict_attr) = owner.getattr(path.as_str()) {
+                        if forward {
+                            dict_attr.call_method1("setdefault", (key, value))?;
+                        } else {
+                            dict_attr.call_method1("__delitem__", (key,))?;
+                        }
+                    }
+                }
+                Operation::DictOp(DictOperation::Update {
+                    path,
+                    keys,
+                    old_values,
+                    new_values,
+                }) => {
+                    if let Ok(dict_attr) = owner.getattr(path.as_str()) {
+                        for ((key, old_value), new_value) in
+                            keys.iter().zip(old_values.iter()).zip(new_values.iter())
+                        {
+                            if forward {
+                                dict_attr.call_method1("__setitem__", (key, new_value))?;
+                            } else if old_value.is_none(py) {
+                                dict_attr.call_method1("__delitem__", (key,))?;
+                            } else {
+                                dict_attr.call_method1("__setitem__", (key, old_value))?;
+                            }
+                        }
+                    }
+                }
+                Operation::DictOp(DictOperation::Delete {
+                    path,
+                    key,
+                    old_value,
+                }) => {
                     if let Ok(dict_attr) = owner.getattr(path.as_str()) {
                         if forward {
                             dict_attr.call_method1("__delitem__", (key,))?;

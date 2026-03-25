@@ -229,7 +229,7 @@ impl TrackedList {
 
 #[pyclass]
 pub struct TrackedDict {
-    inner: HashMap<String, PyObject>, // For now, keys are Strings for simplicity
+    inner: HashMap<String, PyObject>,
     engine: Py<TachyonEngine>,
     name: String,
 }
@@ -259,7 +259,7 @@ impl TrackedDict {
                 .getattr(py, "_restoring")?
                 .extract::<bool>(py)?
             {
-                engine.log_dict_update(self.name.clone(), key.into_py(py), old_value, value);
+                engine.log_dict_update(self.name.clone(), vec![key], vec![old_value], vec![value]);
             }
         }
         Ok(())
@@ -273,7 +273,7 @@ impl TrackedDict {
                     .getattr(py, "_restoring")?
                     .extract::<bool>(py)?
                 {
-                    engine.log_dict_delete(self.name.clone(), key.into_py(py), old_value);
+                    engine.log_dict_delete(self.name.clone(), key, old_value);
                 }
             }
             Ok(())
@@ -296,17 +296,63 @@ impl TrackedDict {
     pub fn __iter__(slf: PyRef<'_, Self>) -> PyResult<PyObject> {
         let py = slf.py();
         let keys: Vec<String> = slf.inner.keys().cloned().collect();
-        let list = pyo3::types::PyList::new(py, keys.into_iter().map(|k| k.into_py(py)));
+        let list = pyo3::types::PyList::new(py, keys);
         Ok(list.call_method0("__iter__")?.to_object(py))
     }
 
     pub fn keys(&self, py: Python) -> PyResult<PyObject> {
         let keys: Vec<String> = self.inner.keys().cloned().collect();
-        Ok(pyo3::types::PyList::new(py, keys.into_iter().map(|k| k.into_py(py))).to_object(py))
+        Ok(pyo3::types::PyList::new(py, keys).to_object(py))
+    }
+
+    pub fn values(&self, py: Python) -> PyResult<PyObject> {
+        let values: Vec<PyObject> = self.inner.values().cloned().collect();
+        Ok(pyo3::types::PyList::new(py, values).to_object(py))
+    }
+
+    pub fn items(&self, py: Python) -> PyResult<PyObject> {
+        let mut items = Vec::new();
+        for (k, v) in &self.inner {
+            items.push((k.clone(), v.clone()));
+        }
+        Ok(pyo3::types::PyList::new(py, items).to_object(py))
     }
 
     pub fn __len__(&self) -> usize {
         self.inner.len()
+    }
+
+    pub fn __eq__(&self, py: Python, other: PyObject) -> PyResult<bool> {
+        let other_dict: HashMap<String, PyObject> = match other.extract(py) {
+            Ok(d) => d,
+            Err(_) => return Ok(false),
+        };
+        if self.inner.len() != other_dict.len() {
+            return Ok(false);
+        }
+        for (a_k, a_v) in &self.inner {
+            if let Some(b_v) = other_dict.get(a_k) {
+                if !a_v.as_ref(py).eq(b_v)? {
+                    return Ok(false);
+                }
+            } else {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    pub fn __ne__(&self, py: Python, other: PyObject) -> PyResult<bool> {
+        Ok(!self.__eq__(py, other)?)
+    }
+
+    pub fn __repr__(&self, py: Python) -> PyResult<String> {
+        let mut items = Vec::new();
+        for (k, v) in &self.inner {
+            let v_repr = v.as_ref(py).repr()?.to_string();
+            items.push(format!("'{}': {}", k, v_repr));
+        }
+        Ok(format!("{{{}}}", items.join(", ")))
     }
 
     pub fn get(&self, py: Python, key: String, default: Option<PyObject>) -> PyObject {
@@ -314,5 +360,100 @@ impl TrackedDict {
             .get(&key)
             .cloned()
             .unwrap_or_else(|| default.unwrap_or_else(|| py.None()))
+    }
+
+    pub fn update(&mut self, py: Python, other: HashMap<String, PyObject>) -> PyResult<()> {
+        let mut keys = Vec::new();
+        let mut old_values = Vec::new();
+        let mut new_values = Vec::new();
+        for (key, value) in other {
+            let old_value = self.inner.get(&key).cloned().unwrap_or_else(|| py.None());
+            self.inner.insert(key.clone(), value.clone());
+            keys.push(key);
+            old_values.push(old_value);
+            new_values.push(value);
+        }
+        if let Ok(mut engine) = self.engine.try_borrow_mut(py) {
+            if !engine
+                .owner
+                .getattr(py, "_restoring")?
+                .extract::<bool>(py)?
+            {
+                engine.log_dict_update(self.name.clone(), keys, old_values, new_values);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn pop(&mut self, py: Python, key: String) -> PyResult<PyObject> {
+        if let Some(old_value) = self.inner.remove(&key) {
+            if let Ok(mut engine) = self.engine.try_borrow_mut(py) {
+                if !engine
+                    .owner
+                    .getattr(py, "_restoring")?
+                    .extract::<bool>(py)?
+                {
+                    engine.log_dict_pop(self.name.clone(), key, old_value.clone());
+                }
+            }
+            Ok(old_value)
+        } else {
+            Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(key))
+        }
+    }
+
+    pub fn popitem(&mut self, py: Python) -> PyResult<(String, PyObject)> {
+        let key = self.inner.keys().next().cloned().ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyKeyError, _>("popitem(): dictionary is empty")
+        })?;
+
+        let old_value = self.inner.remove(&key).unwrap();
+        if let Ok(mut engine) = self.engine.try_borrow_mut(py) {
+            if !engine
+                .owner
+                .getattr(py, "_restoring")?
+                .extract::<bool>(py)?
+            {
+                engine.log_dict_popitem(self.name.clone(), key.clone(), old_value.clone());
+            }
+        }
+        Ok((key, old_value))
+    }
+
+    pub fn setdefault(&mut self, py: Python, key: String, default: PyObject) -> PyResult<PyObject> {
+        if let Some(old_value) = self.inner.get(&key) {
+            Ok(old_value.clone())
+        } else {
+            self.inner.insert(key.clone(), default.clone());
+            if let Ok(mut engine) = self.engine.try_borrow_mut(py) {
+                if !engine
+                    .owner
+                    .getattr(py, "_restoring")?
+                    .extract::<bool>(py)?
+                {
+                    engine.log_dict_setdefault(self.name.clone(), key, default.clone());
+                }
+            }
+            Ok(default)
+        }
+    }
+
+    pub fn clear(&mut self, py: Python) -> PyResult<()> {
+        let mut keys = Vec::new();
+        let mut old_values = Vec::new();
+        for (k, v) in self.inner.drain() {
+            keys.push(k);
+            old_values.push(v);
+        }
+        if let Ok(mut engine) = self.engine.try_borrow_mut(py) {
+            if !engine
+                .owner
+                .getattr(py, "_restoring")?
+                .extract::<bool>(py)?
+            {
+                engine.log_dict_clear(self.name.clone(), keys, old_values);
+            }
+        }
+        Ok(())
     }
 }

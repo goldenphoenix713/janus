@@ -78,6 +78,14 @@ class MultiverseBase(JanusBase):
     def branch(self, label: str):
         self._engine.create_branch(label)
 
+    def create_branch(self, label: str):
+        """Alias for branch() for API convenience."""
+        self.branch(label)
+
+    def switch_branch(self, label: str):
+        """Alias for jump_to() for API convenience."""
+        self.jump_to(label)
+
     def list_branches(self):
         return self._engine.list_branches()
 
