@@ -8,7 +8,7 @@ class JanusAdapter(Protocol):
     def get_snapshot(self, value: Any) -> Any: ...
 
 
-ADAPTER_REGISTRY = {}
+ADAPTER_REGISTRY: dict[type, JanusAdapter] = {}
 
 
 def register_adapter(target_class):

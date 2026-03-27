@@ -8,7 +8,9 @@ version = "0.2.0"
 description = "Extensible, non-linear state travel powered by the Tachyon-RS engine."
 authors = [{ name = "AI Dev Team", email = "dev@example.com" }]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pandas>=3.0.1",
+]
 readme = "README.md"
 license = { text = "MIT OR Apache-2.0" }
 

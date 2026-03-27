@@ -32,7 +32,8 @@ This roadmap outlines the path to a full implementation of the **Janus** archite
 
 - **3.1 AdapterRegistry**: Complete the `register_adapter` decorator and use it to handle "Plugin Blobs" in the Rust engine.
 - **3.2 TrackedList & TrackedDict**: Move beyond stubs. Proxy all mutating operations (append, pop, update) to the engine.
-- **3.3 Third-Party Plugins**: Initial adapters for `pandas.DataFrame` and `numpy.ndarray`.
+- **3.3 Third-Party Plugins**: Initial adapters for `pandas.DataFrame` and `numpy.ndarray`. [/] (Phase A Complete!)
+
 - **⏱️ ETA: 4 Weeks**
 
 ---

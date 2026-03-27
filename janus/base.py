@@ -1,6 +1,15 @@
 from .registry import ADAPTER_REGISTRY
 from .tachyon_rs import TachyonEngine, TrackedDict, TrackedList
 
+try:
+    import pandas as pd
+
+    from .plugins.pandas import TrackedDataFrame, TrackedSeries
+
+    PANDAS_INSTALLED = True
+except ImportError:
+    PANDAS_INSTALLED = False
+
 
 class JanusBase:
     def __init__(self, mode: str):
@@ -8,7 +17,7 @@ class JanusBase:
         self._restoring = False
 
     def __setattr__(self, name, value):
-        if name == "_engine" or name == "_restoring":
+        if name in ["_engine", "_restoring"]:
             return super().__setattr__(name, value)
 
         # Check if we are currently in a state restoration triggered by the engine
@@ -34,6 +43,18 @@ class JanusBase:
         elif isinstance(value, dict):
             # TrackedDict handles internal mutations
             value = TrackedDict(value, self._engine, name)
+
+        elif PANDAS_INSTALLED:
+            if isinstance(value, pd.DataFrame):
+                tracked = TrackedDataFrame(value)
+                tracked._janus_engine = self._engine
+                tracked._janus_name = name
+                value = tracked
+            elif isinstance(value, pd.Series):
+                tracked = TrackedSeries(value)
+                tracked._janus_engine = self._engine
+                tracked._janus_name = name
+                value = tracked
 
         # Log standard attribute update to Rust engine
         if not name.startswith("_"):
