@@ -1,10 +1,11 @@
 import pytest
 
 from janus.base import MultiverseBase
-from janus.plugins.pandas import TrackedDataFrame, TrackedSeries
 
 try:
     import pandas as pd
+
+    from janus.plugins.pandas import TrackedDataFrame, TrackedSeries
 
     PANDAS_INSTALLED = True
 except ImportError:
