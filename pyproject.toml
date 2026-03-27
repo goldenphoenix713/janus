@@ -8,9 +8,7 @@ version = "0.2.0"
 description = "Extensible, non-linear state travel powered by the Tachyon-RS engine."
 authors = [{ name = "AI Dev Team", email = "dev@example.com" }]
 requires-python = ">=3.12"
-dependencies = [
-    "pandas>=3.0.1",
-]
+dependencies = []
 readme = "README.md"
 license = { text = "MIT OR Apache-2.0" }
 
@@ -21,8 +19,15 @@ dev = [
     "mypy>=1.19.1",
     "numpy>=1.26.0",
     "pre-commit>=4.5.1",
-    "pytest>=7.0",
     "ruff>=0.15.7",
+]
+
+test = [
+    "pytest>=7.0",
+]
+
+pandas = [
+    "pandas>=2.0.0",
 ]
 
 [tool.maturin]
