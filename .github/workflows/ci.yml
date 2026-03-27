@@ -30,7 +30,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install Python Dependencies
-        run: uv sync
+        run: uv sync --all-groups
 
       - name: Run Cargo Clippy
         run: cargo clippy -- -D warnings
