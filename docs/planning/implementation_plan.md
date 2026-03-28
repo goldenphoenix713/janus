@@ -517,9 +517,58 @@ Implement configurable pruning strategies.
 
 ---
 
-## Verification Plan
+## Phase B: Indexer Wrappers (Cell-Level Tracking)
 
-### Automated Tests
+To track operations like `df.loc[0, "col"] = val`, we must wrap the pandas indexers.
+
+### 1. The Indexer Proxy Architecture
+
+We'll define a base proxy that delegates reads and intercepts writes.
+
+**Conceptual Pseudo-code:**
+
+```python
+class BaseTrackedIndexer:
+    def __init__(self, parent_df, indexer_name):
+        self._parent = parent_df
+        # Get the real pandas indexer (e.g., df.loc) from the base class
+        self._real_indexer = getattr(
+            super(self._parent.__class__, self._parent),
+            indexer_name,
+        )
+
+    def __getitem__(self, key):
+        # Transparency for reads
+        return self._real_indexer[key]
+
+    def __setitem__(self, key, value):
+        # Intercept for writes
+        from .pandas import _log_pre_mutation, _log_post_mutation
+        _log_pre_mutation(self._parent, "indexer")
+        self._real_indexer[key] = value
+        _log_post_mutation(self._parent, "indexer")
+```
+
+### 2. Accessor Overrides
+
+In `TrackedDataFrame` and `TrackedSeries`, we will override the property accessors.
+
+```python
+class TrackedDataFrame(pd.DataFrame):
+    @property
+    def loc(self):
+        return BaseTrackedIndexer(self, "loc")
+
+    @property
+    def iloc(self):
+        return BaseTrackedIndexer(self, "iloc")
+
+    # ... and for at/iat ...
+```
+
+---
+
+## ✅ Verification Plan (Phase B)
 
 All waypoints include new or extended tests. Run the full suite after each waypoint:
 
