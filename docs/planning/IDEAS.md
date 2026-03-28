@@ -6,7 +6,7 @@ This document serves as a repository for nascent ideas, experimental features, a
 
 ## 🗺️ 1. Visual Timeline & Graph Explorer
 
-**Concept**: A dedicated UI (Web-based or CLI-Dashboard) to interactively traverse the state DAG of an object.
+**Concept**: A dedicated UI (CLI-based or IDE-integrated) to interactively traverse the state DAG of an object.
 
 **Potential Features**:
 

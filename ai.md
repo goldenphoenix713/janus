@@ -352,7 +352,6 @@ Configured in `pyproject.toml` under `[tool.mypy]`:
 - **Calls to untyped functions are errors.** If you call a function that lacks annotations, mypy will flag it (`no-untyped-call`).
 - **`# type: ignore` comments must be valid.** Stale or unnecessary `# type: ignore` comments will cause `unused-ignore` errors. Only add them when truly needed, and always specify the error code (e.g., `# type: ignore[override]`).
 - **The `tachyon_rs.pyi` stub file provides types for the Rust extension** — keep it in sync with any `#[pymethods]` or `#[getter]` changes in `engine.rs`.
-- **`plotly.*` and `dash.*` modules** have explicit `ignore_missing_imports` overrides.
 - **Use `Any` sparingly but deliberately.** For dynamic containers and PyO3 boundaries, `Any` is acceptable. For pure Python logic, prefer concrete types.
 
 ### 7.4 Rust — Clippy & Rustfmt
@@ -461,6 +460,11 @@ uv run python tests/test_vs_deepcopy.py    # Janus vs deepcopy comparison
 from janus import MultiverseBase, TimelineBase
 
 class MyTimelineObj(TimelineBase):
+    def __init__(self) -> None:
+        super().__init__()
+        self.value = 0
+
+class MyMultiverseObj(MultiverseBase):
     def __init__(self) -> None:
         super().__init__()
         self.items: list[int] = []    # Auto-wrapped to TrackedList

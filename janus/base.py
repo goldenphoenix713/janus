@@ -130,6 +130,36 @@ class JanusBase:
         """Redo the last operation."""
         self._engine.redo()
 
+    def tag_moment(self, **kwargs: Any) -> None:
+        for key, value in kwargs.items():
+            self._engine.set_metadata(key, value)
+
+    def get_all_tag_keys(self, label: str | None = None) -> tuple[str, ...]:
+        node_id = self._resolve_label_to_id(label) if label else None
+        return tuple(self._engine.get_metadata_keys(node_id))
+
+    def get_all_tag_values(self, label: str | None = None) -> tuple[Any, ...]:
+        node_id = self._resolve_label_to_id(label) if label else None
+        return tuple(self._engine.get_metadata_values(node_id))
+
+    def get_all_tags(self, label: str | None = None) -> dict[str, Any]:
+        node_id = self._resolve_label_to_id(label) if label else None
+        return dict(self._engine.get_metadata_items(node_id))
+
+    def get_moment_tag(self, key: str, label: str | None = None) -> Any:
+        node_id = self._resolve_label_to_id(label) if label else None
+        return self._engine.get_metadata(key, node_id)
+
+    def label_node(self, label: str) -> None:
+        """Assign a human-readable label to the current state node."""
+        self._engine.label_node(label)
+
+    def _resolve_label_to_id(self, label: str) -> int:
+        node_id = self._engine.get_node_id(label)
+        if node_id is None:
+            raise KeyError(f"Label '{label}' not found in timeline or multiverse")
+        return node_id
+
 
 class TimelineBase(JanusBase):
     def __init__(self) -> None:
@@ -165,8 +195,89 @@ class MultiverseBase(JanusBase):
         """Alias for branch() to stay compatible with brainstorming terminology."""
         self._engine.label_node(label)
 
-    def extract_timeline(self, label: str) -> list[dict[str, Any]]:
-        return self._engine.extract_timeline(label)
+    def merge(self, label: str, strategy: str = "overshadow") -> None:
+        """
+        Merge changes from another branch into the current one.
+        Supported strategies:
+        - "overshadow": (Default) Source branch changes overwrite target
+          changes on conflict.
+        - "preserve": Target branch changes are kept on conflict.
+        - "strict": Raise an error if any conflicts are detected.
+        """
+        self._engine.merge_branch(label, strategy)
+
+    def extract_timeline(
+        self, label: str | None = None, filter_attr: list[str] | str | None = None
+    ) -> list[dict[str, Any]]:
+        """
+        Extract the history of operations from root to a specific node or label.
+        If filter_attr is provided (string or list of strings), only operations
+        affecting those attributes are returned.
+        """
+        if isinstance(filter_attr, str):
+            filter_attr = [filter_attr]
+        return self._engine.extract_timeline(label, filter_attr)
+
+    def find_moments(self, **criteria: Any) -> list[str | int]:
+        """
+        Search the entire multiverse for nodes matching the given metadata criteria.
+        Returns a list of labels (if the node is labeled) or node IDs.
+        """
+        # For now, we search for the first criterion to narrow down
+        if not criteria:
+            return []
+
+        # Get all node IDs matching all criteria
+        all_matches: set[int] | None = None
+        for key, value in criteria.items():
+            matches = set(self._engine.find_nodes_by_metadata(key, value))
+            if all_matches is None:
+                all_matches = matches
+            else:
+                all_matches &= matches
+
+            if not all_matches:
+                break
+
+        if not all_matches:
+            return []
+
+        # Resolve IDs to labels where possible
+        results: list[str | int] = []
+        # Check if any matching node is a branch head
+        branches = self._engine.list_branches()
+        head_map = {}
+        for b in branches:
+            bid = self._engine.get_node_id(b)
+            if bid is not None:
+                head_map[bid] = b
+
+        for node_id in sorted(all_matches):
+            if node_id in head_map:
+                results.append(head_map[node_id])
+            else:
+                results.append(node_id)
+
+        return results
+
+    def squash(self, label: str | None = None) -> None:
+        """
+        Collapse a sequence of state nodes into a single composite node.
+        Optimizes memory and simplifies the timeline.
+        """
+        self._engine.squash_branch(label)
+
+    def flatten(self, label: str | None = None) -> None:
+        """Alias for squash()."""
+        self.squash(label)
 
     def delete_branch(self, label: str) -> None:
         self._engine.delete_branch(label)
+
+    def visualize(self) -> str:
+        """
+        Return a Mermaid diagram string representing the state DAG.
+        """
+        from .viz import to_mermaid
+
+        return to_mermaid(self)

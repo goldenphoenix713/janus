@@ -43,3 +43,6 @@ build/
 .env.*
 secrets.yaml
 credentials.json
+
+# 6. AI Context
+!ai.local.md

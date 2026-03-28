@@ -1,6 +1,8 @@
 use pyo3::prelude::*;
+use pyo3::types::PyAnyMethods;
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub enum Operation {
     UpdateAttr {
         name: String,
@@ -16,6 +18,44 @@ pub enum Operation {
     },
 }
 
+impl Operation {
+    #[allow(dead_code)]
+    pub fn get_path(&self) -> &str {
+        match self {
+            Operation::UpdateAttr { name, .. } => name,
+            Operation::ListOp(lo) => lo.get_path(),
+            Operation::DictOp(do_op) => do_op.get_path(),
+            Operation::PluginOp { path, .. } => path,
+        }
+    }
+
+    pub fn clone_ref(&self, py: Python) -> Self {
+        match self {
+            Operation::UpdateAttr {
+                name,
+                old_value,
+                new_value,
+            } => Operation::UpdateAttr {
+                name: name.clone(),
+                old_value: old_value.clone_ref(py),
+                new_value: new_value.clone_ref(py),
+            },
+            Operation::ListOp(lo) => Operation::ListOp(lo.clone_ref(py)),
+            Operation::DictOp(do_op) => Operation::DictOp(do_op.clone_ref(py)),
+            Operation::PluginOp {
+                path,
+                adapter_name,
+                delta_blob,
+            } => Operation::PluginOp {
+                path: path.clone(),
+                adapter_name: adapter_name.clone(),
+                delta_blob: delta_blob.clone_ref(py),
+            },
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum ListOperation {
     Insert {
         path: String,
@@ -47,6 +87,62 @@ pub enum ListOperation {
     },
 }
 
+impl ListOperation {
+    pub fn get_path(&self) -> &str {
+        match self {
+            ListOperation::Insert { path, .. } => path,
+            ListOperation::Pop { path, .. } => path,
+            ListOperation::Replace { path, .. } => path,
+            ListOperation::Clear { path, .. } => path,
+            ListOperation::Extend { path, .. } => path,
+            ListOperation::Remove { path, .. } => path,
+        }
+    }
+
+    pub fn clone_ref(&self, py: Python) -> Self {
+        match self {
+            ListOperation::Insert { path, index, value } => ListOperation::Insert {
+                path: path.clone(),
+                index: *index,
+                value: value.clone_ref(py),
+            },
+            ListOperation::Pop {
+                path,
+                index,
+                popped_value,
+            } => ListOperation::Pop {
+                path: path.clone(),
+                index: *index,
+                popped_value: popped_value.clone_ref(py),
+            },
+            ListOperation::Replace {
+                path,
+                index,
+                old_value,
+                new_value,
+            } => ListOperation::Replace {
+                path: path.clone(),
+                index: *index,
+                old_value: old_value.clone_ref(py),
+                new_value: new_value.clone_ref(py),
+            },
+            ListOperation::Clear { path, old_values } => ListOperation::Clear {
+                path: path.clone(),
+                old_values: old_values.iter().map(|v| v.clone_ref(py)).collect(),
+            },
+            ListOperation::Extend { path, new_values } => ListOperation::Extend {
+                path: path.clone(),
+                new_values: new_values.iter().map(|v| v.clone_ref(py)).collect(),
+            },
+            ListOperation::Remove { path, value } => ListOperation::Remove {
+                path: path.clone(),
+                value: value.clone_ref(py),
+            },
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum DictOperation {
     Clear {
         path: String,
@@ -81,6 +177,76 @@ pub enum DictOperation {
     },
 }
 
+impl DictOperation {
+    pub fn get_path(&self) -> &str {
+        match self {
+            DictOperation::Clear { path, .. } => path,
+            DictOperation::Pop { path, .. } => path,
+            DictOperation::PopItem { path, .. } => path,
+            DictOperation::SetDefault { path, .. } => path,
+            DictOperation::Update { path, .. } => path,
+            DictOperation::Delete { path, .. } => path,
+        }
+    }
+
+    pub fn clone_ref(&self, py: Python) -> Self {
+        match self {
+            DictOperation::Clear {
+                path,
+                keys,
+                old_values,
+            } => DictOperation::Clear {
+                path: path.clone(),
+                keys: keys.clone(),
+                old_values: old_values.iter().map(|v| v.clone_ref(py)).collect(),
+            },
+            DictOperation::Pop {
+                path,
+                key,
+                old_value,
+            } => DictOperation::Pop {
+                path: path.clone(),
+                key: key.clone(),
+                old_value: old_value.clone_ref(py),
+            },
+            DictOperation::PopItem {
+                path,
+                key,
+                old_value,
+            } => DictOperation::PopItem {
+                path: path.clone(),
+                key: key.clone(),
+                old_value: old_value.clone_ref(py),
+            },
+            DictOperation::SetDefault { path, key, value } => DictOperation::SetDefault {
+                path: path.clone(),
+                key: key.clone(),
+                value: value.clone_ref(py),
+            },
+            DictOperation::Update {
+                path,
+                keys,
+                old_values,
+                new_values,
+            } => DictOperation::Update {
+                path: path.clone(),
+                keys: keys.clone(),
+                old_values: old_values.iter().map(|v| v.clone_ref(py)).collect(),
+                new_values: new_values.iter().map(|v| v.clone_ref(py)).collect(),
+            },
+            DictOperation::Delete {
+                path,
+                key,
+                old_value,
+            } => DictOperation::Delete {
+                path: path.clone(),
+                key: key.clone(),
+                old_value: old_value.clone_ref(py),
+            },
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum Mode {
     Linear,
@@ -91,12 +257,13 @@ pub struct StateNode {
     pub id: usize,
     pub parents: Vec<usize>,
     pub deltas: Vec<Operation>,
-    // pub metadata: HashMap<String, PyObject>,
+    pub metadata: HashMap<String, PyObject>,
+    pub timestamp: u64,
 }
 
 #[pyclass]
 pub struct TachyonEngine {
-    pub owner: Py<PyAny>,
+    pub owner: Py<pyo3::types::PyWeakref>,
     nodes: HashMap<usize, StateNode>,
     node_labels: HashMap<String, usize>,
     active_branch: String,
@@ -108,8 +275,40 @@ pub struct TachyonEngine {
 
 #[pymethods]
 impl TachyonEngine {
+    #[allow(deprecated)]
+    pub fn get_graph_data(&self, py: Python) -> PyResult<PyObject> {
+        let mut nodes = Vec::new();
+
+        // Build a map of node_id -> Vec<labels>
+        let mut label_map: HashMap<usize, Vec<String>> = HashMap::new();
+        for (label, &id) in &self.branch_labels {
+            label_map.entry(id).or_default().push(label.clone());
+        }
+        for (label, &id) in &self.node_labels {
+            label_map.entry(id).or_default().push(label.clone());
+        }
+
+        for (&id, node) in &self.nodes {
+            let labels = label_map.get(&id).cloned().unwrap_or_default();
+            let mut node_data = HashMap::<&str, PyObject>::new();
+            node_data.insert("id", id.to_object(py));
+            node_data.insert("parents", node.parents.to_object(py));
+            node_data.insert("labels", labels.to_object(py));
+            node_data.insert("is_current", (id == self.current_node).to_object(py));
+            nodes.push(node_data.into_pyobject(py)?);
+        }
+
+        Ok(nodes.into_pyobject(py)?.into())
+    }
+
     #[new]
-    pub fn new(owner: Py<PyAny>, mode: String) -> Self {
+    pub fn new(owner: Bound<'_, PyAny>, mode: String) -> PyResult<Self> {
+        let py = owner.py();
+        let weakref_module = py.import("weakref")?;
+        let weak_owner = weakref_module
+            .call_method1("ref", (&owner,))?
+            .downcast_into::<pyo3::types::PyWeakref>()?
+            .unbind();
         let mut node_labels = HashMap::new();
         let mut branch_labels = HashMap::new();
         node_labels.insert("__genesis__".to_string(), 0);
@@ -123,7 +322,11 @@ impl TachyonEngine {
                 id: 0,
                 parents: Vec::new(),
                 deltas: Vec::new(),
-                // metadata: HashMap::new(),
+                metadata: HashMap::new(),
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
             },
         );
 
@@ -133,8 +336,8 @@ impl TachyonEngine {
             _ => panic!("Invalid mode: {}", mode),
         };
 
-        TachyonEngine {
-            owner,
+        Ok(TachyonEngine {
+            owner: weak_owner,
             nodes,
             node_labels,
             branch_labels,
@@ -142,12 +345,12 @@ impl TachyonEngine {
             current_node: 0,
             next_node_id: 1,
             mode,
-        }
+        })
     }
 
     #[getter]
-    pub fn owner(&self, py: Python) -> Py<PyAny> {
-        self.owner.clone_ref(py)
+    pub fn owner(&self, py: Python) -> PyResult<PyObject> {
+        Ok(self.upgrade_owner(py)?.into_pyobject(py)?.into())
     }
 
     pub fn list_nodes(&self) -> Vec<String> {
@@ -209,6 +412,81 @@ impl TachyonEngine {
         Ok(())
     }
 
+    pub fn get_node_id(&self, label: String) -> Option<usize> {
+        self.node_labels
+            .get(&label)
+            .or(self.branch_labels.get(&label))
+            .cloned()
+    }
+
+    pub fn set_metadata(&mut self, key: String, value: PyObject) {
+        let node = self.nodes.get_mut(&self.current_node).unwrap();
+        node.metadata.insert(key, value);
+    }
+
+    #[pyo3(signature = (key, node_id=None))]
+    pub fn get_metadata(
+        &self,
+        py: Python,
+        key: String,
+        node_id: Option<usize>,
+    ) -> Option<PyObject> {
+        let id = node_id.unwrap_or(self.current_node);
+        self.nodes
+            .get(&id)
+            .and_then(|n| n.metadata.get(&key))
+            .map(|v| v.clone_ref(py))
+    }
+
+    #[pyo3(signature = (node_id=None))]
+    pub fn get_metadata_keys(&self, node_id: Option<usize>) -> Vec<String> {
+        let id = node_id.unwrap_or(self.current_node);
+        self.nodes
+            .get(&id)
+            .map(|n| n.metadata.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    #[pyo3(signature = (node_id=None))]
+    pub fn get_metadata_values(&self, py: Python, node_id: Option<usize>) -> Vec<PyObject> {
+        let id = node_id.unwrap_or(self.current_node);
+        self.nodes
+            .get(&id)
+            .map(|n| n.metadata.values().map(|v| v.clone_ref(py)).collect())
+            .unwrap_or_default()
+    }
+
+    #[pyo3(signature = (node_id=None))]
+    pub fn get_metadata_items(
+        &self,
+        py: Python,
+        node_id: Option<usize>,
+    ) -> Vec<(String, PyObject)> {
+        let id = node_id.unwrap_or(self.current_node);
+        self.nodes
+            .get(&id)
+            .map(|n| {
+                n.metadata
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone_ref(py)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn find_nodes_by_metadata(&self, py: Python, key: String, value: PyObject) -> Vec<usize> {
+        let mut results = Vec::new();
+        for (&id, node) in &self.nodes {
+            if let Some(v) = node.metadata.get(&key) {
+                if v.bind(py).eq(value.bind(py)).unwrap_or(false) {
+                    results.push(id);
+                }
+            }
+        }
+        results.sort();
+        results
+    }
+
     pub fn undo(&mut self, py: Python) -> PyResult<()> {
         if let Some(node) = self.nodes.get(&self.current_node) {
             if let Some(&parent_id) = node.parents.first() {
@@ -218,10 +496,527 @@ impl TachyonEngine {
         Ok(())
     }
 
+    #[pyo3(signature = (label=None))]
+    pub fn squash_branch(&mut self, py: Python, label: Option<String>) -> PyResult<()> {
+        let leaf_id = if let Some(l) = label {
+            *self.branch_labels.get(&l).ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!("Branch '{}' not found", l))
+            })?
+        } else {
+            self.current_node
+        };
+
+        if leaf_id == 0 {
+            return Ok(()); // Root cannot be squashed
+        }
+
+        let mut path = Vec::new();
+        let mut curr = leaf_id;
+
+        // Walk back to find the "stable ancestor"
+        // A stable ancestor is the first node that is either:
+        // 1. Root (id=0)
+        // 2. A node with multiple parents (confluence point)
+        // 3. A node whose parent has other children (branching point)
+        while curr != 0 {
+            path.push(curr);
+            let node = self.nodes.get(&curr).unwrap();
+
+            // If node has multiple parents, it's a merge point - stop here.
+            if node.parents.len() != 1 {
+                break;
+            }
+
+            let parent_id = node.parents[0];
+            if parent_id == 0 {
+                break;
+            }
+
+            // Check if parent has other children
+            let child_count = self
+                .nodes
+                .values()
+                .filter(|n| n.parents.contains(&parent_id))
+                .count();
+
+            if child_count > 1 {
+                break;
+            }
+
+            curr = parent_id;
+        }
+
+        if path.len() < 2 {
+            return Ok(()); // Nothing to squash (only 0 or 1 node in the chain)
+        }
+
+        path.reverse();
+        // The common ancestor is the parent of the first node in our chain
+        let anchor_id = self.nodes.get(&path[0]).unwrap().parents[0];
+
+        // Collect all deltas
+        let mut all_deltas = Vec::new();
+        for nid in &path {
+            let node_deltas = &self.nodes.get(nid).unwrap().deltas;
+            for op in node_deltas {
+                all_deltas.push(op.clone_ref(py));
+            }
+        }
+
+        // Consolidate deltas
+        let consolidated = self.consolidate_deltas(py, all_deltas);
+
+        let mut new_metadata = HashMap::new();
+        for (k, v) in &self.nodes.get(&leaf_id).unwrap().metadata {
+            new_metadata.insert(k.clone(), v.clone_ref(py));
+        }
+
+        // Create new node
+        let new_id = self.nodes.len();
+        let new_node = StateNode {
+            id: new_id,
+            parents: vec![anchor_id],
+            deltas: consolidated,
+            metadata: new_metadata,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        };
+
+        self.nodes.insert(new_id, new_node);
+
+        // Update branch labels pointing to this leaf
+        let mut branches_to_update = Vec::new();
+        for (name, &head_id) in &self.branch_labels {
+            if head_id == leaf_id {
+                branches_to_update.push(name.clone());
+            }
+        }
+        for name in branches_to_update {
+            self.branch_labels.insert(name, new_id);
+        }
+
+        // Update node labels pointing to this leaf
+        let mut node_labels_to_update = Vec::new();
+        for (name, &nid) in &self.node_labels {
+            if nid == leaf_id {
+                node_labels_to_update.push(name.clone());
+            }
+        }
+        for name in node_labels_to_update {
+            self.node_labels.insert(name, new_id);
+        }
+
+        // Move current_node to the new squashed node if it was on the squashed branch
+        if self.current_node == leaf_id {
+            self.current_node = new_id;
+        }
+
+        Ok(())
+    }
+}
+
+impl TachyonEngine {
+    fn consolidate_deltas(&self, py: Python, deltas: Vec<Operation>) -> Vec<Operation> {
+        use std::collections::HashMap;
+        let mut attr_map = HashMap::<String, (PyObject, PyObject)>::new();
+        let mut others = Vec::new();
+
+        for op in deltas {
+            match op {
+                Operation::UpdateAttr {
+                    name,
+                    old_value,
+                    new_value,
+                } => {
+                    if let Some(entry) = attr_map.get_mut(&name) {
+                        entry.1 = new_value.clone_ref(py);
+                    } else {
+                        attr_map.insert(name, (old_value.clone_ref(py), new_value.clone_ref(py)));
+                    }
+                }
+                _ => others.push(op), // Keep Container/Plugin ops as is for now
+            }
+        }
+
+        let mut result = Vec::new();
+        // Deterministic order for testing
+        let mut keys: Vec<_> = attr_map.keys().cloned().collect();
+        keys.sort();
+
+        for name in keys {
+            let (old_value, new_value) = attr_map.remove(&name).unwrap();
+            result.push(Operation::UpdateAttr {
+                name,
+                old_value,
+                new_value,
+            });
+        }
+        result.extend(others);
+        result
+    }
+
+    fn get_all_ops(&self, py: Python, base_id: usize, head_id: usize) -> Vec<Operation> {
+        let path = self.get_path_between(base_id, head_id);
+        let mut all_ops = Vec::new();
+        for node_id in path {
+            if let Some(node) = self.nodes.get(&node_id) {
+                for op in &node.deltas {
+                    all_ops.push(op.clone_ref(py));
+                }
+            }
+        }
+        all_ops
+    }
+
+    fn reconcile_source_ops(
+        &self,
+        py: Python,
+        target_ops: &[Operation],
+        source_ops: Vec<Operation>,
+        strategy: &str,
+    ) -> PyResult<Vec<Operation>> {
+        let mut reconciled = Vec::new();
+        for s_op in source_ops {
+            if let Some(op) = self.rebase_operation(py, s_op, target_ops, strategy)? {
+                reconciled.push(op);
+            }
+        }
+        Ok(reconciled)
+    }
+
+    fn rebase_operation(
+        &self,
+        py: Python,
+        mut op: Operation,
+        target_ops: &[Operation],
+        strategy: &str,
+    ) -> PyResult<Option<Operation>> {
+        for t_op in target_ops {
+            match (&op, t_op) {
+                (Operation::ListOp(lo), Operation::ListOp(tlo)) => {
+                    if lo.get_path() == tlo.get_path() {
+                        if let Some(new_lo) = self.transform_list_op(py, lo, tlo, strategy)? {
+                            op = Operation::ListOp(new_lo);
+                        } else {
+                            return Ok(None);
+                        }
+                    }
+                }
+                (Operation::DictOp(do_op), Operation::DictOp(tdo_op)) => {
+                    if do_op.get_path() == tdo_op.get_path() {
+                        if let Some(new_do) = self.transform_dict_op(py, do_op, tdo_op, strategy)? {
+                            op = Operation::DictOp(new_do);
+                        } else {
+                            return Ok(None);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(Some(op))
+    }
+
+    fn transform_list_op(
+        &self,
+        py: Python,
+        lo: &ListOperation,
+        tlo: &ListOperation,
+        _strategy: &str,
+    ) -> PyResult<Option<ListOperation>> {
+        match (lo, tlo) {
+            (
+                ListOperation::Insert { path, index, value },
+                ListOperation::Insert { index: t_index, .. },
+            ) => {
+                let mut new_index = *index;
+                if *t_index <= *index {
+                    new_index += 1;
+                }
+                Ok(Some(ListOperation::Insert {
+                    path: path.clone(),
+                    index: new_index,
+                    value: value.clone_ref(py),
+                }))
+            }
+            (
+                ListOperation::Insert { path, index, value },
+                ListOperation::Pop { index: t_index, .. },
+            ) => {
+                let mut new_index = *index;
+                if *t_index < *index {
+                    new_index -= 1;
+                }
+                Ok(Some(ListOperation::Insert {
+                    path: path.clone(),
+                    index: new_index,
+                    value: value.clone_ref(py),
+                }))
+            }
+            _ => Ok(Some(lo.clone_ref(py))),
+        }
+    }
+
+    fn transform_dict_op(
+        &self,
+        py: Python,
+        do_op: &DictOperation,
+        tdo_op: &DictOperation,
+        strategy: &str,
+    ) -> PyResult<Option<DictOperation>> {
+        match (do_op, tdo_op) {
+            (
+                DictOperation::Update {
+                    path,
+                    keys,
+                    old_values,
+                    new_values,
+                },
+                DictOperation::Update { keys: t_keys, .. },
+            ) => {
+                let mut final_keys = Vec::new();
+                let mut final_old = Vec::new();
+                let mut final_new = Vec::new();
+
+                for i in 0..keys.len() {
+                    let k = &keys[i];
+                    if t_keys.contains(k) {
+                        if strategy == "strict" {
+                            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                                "Merge conflict on dictionary key '{}'",
+                                k
+                            )));
+                        } else if strategy == "preserve" {
+                            continue; // Target wins
+                        }
+                    }
+                    final_keys.push(k.clone());
+                    final_old.push(old_values[i].clone_ref(py));
+                    final_new.push(new_values[i].clone_ref(py));
+                }
+
+                if final_keys.is_empty() {
+                    return Ok(None);
+                }
+
+                Ok(Some(DictOperation::Update {
+                    path: path.clone(),
+                    keys: final_keys,
+                    old_values: final_old,
+                    new_values: final_new,
+                }))
+            }
+            _ => Ok(Some(do_op.clone_ref(py))),
+        }
+    }
+
+    fn find_lca(&self, a: usize, b: usize) -> usize {
+        use std::collections::HashSet;
+        let mut ancestors_a = HashSet::new();
+        let mut curr = a;
+        while curr != 0 {
+            ancestors_a.insert(curr);
+            let node = self.nodes.get(&curr).unwrap();
+            if node.parents.is_empty() {
+                break;
+            }
+            curr = node.parents[0];
+        }
+        ancestors_a.insert(0);
+
+        curr = b;
+        while curr != 0 {
+            if ancestors_a.contains(&curr) {
+                return curr;
+            }
+            let node = self.nodes.get(&curr).unwrap();
+            if node.parents.is_empty() {
+                break;
+            }
+            curr = node.parents[0];
+        }
+        0
+    }
+
+    fn get_net_deltas_map(
+        &self,
+        py: Python,
+        base_id: usize,
+        head_id: usize,
+    ) -> HashMap<String, (PyObject, PyObject)> {
+        let mut attr_map = HashMap::<String, (PyObject, PyObject)>::new();
+        let path = self.get_path_between(base_id, head_id);
+
+        for nid in path {
+            let node = self.nodes.get(&nid).unwrap();
+            for op in &node.deltas {
+                if let Operation::UpdateAttr {
+                    name,
+                    old_value,
+                    new_value,
+                } = op
+                {
+                    if let Some(entry) = attr_map.get_mut(name) {
+                        entry.1 = new_value.clone_ref(py);
+                    } else {
+                        attr_map.insert(
+                            name.clone(),
+                            (old_value.clone_ref(py), new_value.clone_ref(py)),
+                        );
+                    }
+                }
+            }
+        }
+        attr_map
+    }
+
+    fn get_other_ops(&self, py: Python, base_id: usize, head_id: usize) -> Vec<Operation> {
+        let mut others = Vec::new();
+        let path = self.get_path_between(base_id, head_id);
+        for nid in path {
+            let node = self.nodes.get(&nid).unwrap();
+            for op in &node.deltas {
+                match op {
+                    Operation::UpdateAttr { .. } => {}
+                    _ => others.push(op.clone_ref(py)),
+                }
+            }
+        }
+        others
+    }
+
+    fn get_path_between(&self, base_id: usize, head_id: usize) -> Vec<usize> {
+        let mut path = Vec::new();
+        let mut curr = head_id;
+        while curr != base_id && curr != 0 {
+            path.push(curr);
+            let node = self.nodes.get(&curr).unwrap();
+            if node.parents.is_empty() {
+                break;
+            }
+            curr = node.parents[0];
+        }
+        path.reverse();
+        path
+    }
+}
+
+#[pymethods]
+impl TachyonEngine {
     pub fn redo(&mut self, py: Python) -> PyResult<()> {
         if let Some(node) = self.nodes.get(&(self.current_node + 1)) {
             self.move_to_node_id(py, node.id)?;
         }
+        Ok(())
+    }
+
+    #[pyo3(signature = (source_label, strategy = "overshadow"))]
+    pub fn merge_branch(
+        &mut self,
+        py: Python,
+        source_label: String,
+        strategy: &str,
+    ) -> PyResult<()> {
+        let source_id = *self.branch_labels.get(&source_label).ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                "Source branch '{}' not found",
+                source_label
+            ))
+        })?;
+
+        let target_id = self.current_node;
+        if source_id == target_id {
+            return Ok(()); // Already merged
+        }
+
+        let lca_id = self.find_lca(target_id, source_id);
+
+        // Get net changes for both paths from LCA
+        let target_net = self.get_net_deltas_map(py, lca_id, target_id);
+        let source_net = self.get_net_deltas_map(py, lca_id, source_id);
+
+        let mut merged_ops = Vec::new();
+
+        // 3-Way Reconciliation
+        for (name, (old_at_base, source_val)) in source_net {
+            if let Some((_old_at_base_target, target_val)) = target_net.get(&name) {
+                // Conflict!
+                if target_val.bind(py).eq(source_val.bind(py))? {
+                    // Same value, no conflict
+                    continue;
+                }
+
+                match strategy {
+                    "overshadow" => {
+                        // Source wins: set from current target_val to source_val
+                        merged_ops.push(Operation::UpdateAttr {
+                            name: name.clone(),
+                            old_value: target_val.clone_ref(py),
+                            new_value: source_val.clone_ref(py),
+                        });
+                    }
+                    "preserve" => {
+                        // Target wins: do nothing
+                    }
+                    "strict" => {
+                        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                            "Merge conflict on attribute '{}'",
+                            name
+                        )));
+                    }
+                    _ => {
+                        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                            "Unknown merge strategy '{}'",
+                            strategy
+                        )));
+                    }
+                }
+            } else {
+                // Key only in source: apply it to current target
+                // Since it wasn't in target_net, the target value matches base
+                merged_ops.push(Operation::UpdateAttr {
+                    name,
+                    old_value: old_at_base.clone_ref(py),
+                    new_value: source_val.clone_ref(py),
+                });
+            }
+        }
+
+        // Handle other operations (Containers/Plugins) via reconciliation
+        let target_all_ops = self.get_all_ops(py, lca_id, target_id);
+        let source_others = self.get_other_ops(py, lca_id, source_id);
+        let reconciled_source =
+            self.reconcile_source_ops(py, &target_all_ops, source_others, strategy)?;
+        merged_ops.extend(reconciled_source);
+
+        if merged_ops.is_empty() && lca_id == source_id {
+            return Ok(()); // Source is already an ancestor of target
+        }
+
+        // Create merge node
+        let new_id = self.next_node_id;
+        self.next_node_id += 1;
+        let new_node = StateNode {
+            id: new_id,
+            parents: vec![target_id, source_id], // Two parents!
+            deltas: merged_ops,
+            metadata: HashMap::new(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        };
+
+        self.nodes.insert(new_id, new_node);
+        // Do not update current_node manually! move_to_node_id will do it after applying deltas.
+        self.branch_labels
+            .insert(self.active_branch.clone(), new_id);
+
+        // Apply state changes to the live object
+        self.move_to_node_id(py, new_id)?;
+
         Ok(())
     }
 
@@ -248,8 +1043,13 @@ impl TachyonEngine {
         self.current_node
     }
 
-    #[pyo3(signature = (label=None))]
-    pub fn extract_timeline(&self, py: Python, label: Option<String>) -> PyResult<Vec<PyObject>> {
+    #[pyo3(signature = (label=None, filter_attr=None))]
+    pub fn extract_timeline(
+        &self,
+        py: Python,
+        label: Option<String>,
+        filter_attr: Option<Vec<String>>,
+    ) -> PyResult<Vec<PyObject>> {
         let target_node_id = match label {
             Some(label) => self
                 .node_labels
@@ -268,8 +1068,43 @@ impl TachyonEngine {
         let mut timeline = Vec::new();
         for node_id in path {
             if let Some(node) = self.nodes.get(&node_id) {
+                let metadata_dict = pyo3::types::PyDict::new(py);
+                for (k, v) in &node.metadata {
+                    metadata_dict.set_item(k, v.clone_ref(py))?;
+                }
+
                 for op in &node.deltas {
+                    if let Some(ref filters) = filter_attr {
+                        let op_name = match op {
+                            Operation::UpdateAttr { name, .. } => name.as_str(),
+                            Operation::ListOp(lo) => match lo {
+                                ListOperation::Insert { path, .. } => path.as_str(),
+                                ListOperation::Pop { path, .. } => path.as_str(),
+                                ListOperation::Replace { path, .. } => path.as_str(),
+                                ListOperation::Clear { path, .. } => path.as_str(),
+                                ListOperation::Extend { path, .. } => path.as_str(),
+                                ListOperation::Remove { path, .. } => path.as_str(),
+                            },
+                            Operation::DictOp(do_alt) => match do_alt {
+                                DictOperation::Clear { path, .. } => path.as_str(),
+                                DictOperation::Pop { path, .. } => path.as_str(),
+                                DictOperation::PopItem { path, .. } => path.as_str(),
+                                DictOperation::SetDefault { path, .. } => path.as_str(),
+                                DictOperation::Update { path, .. } => path.as_str(),
+                                DictOperation::Delete { path, .. } => path.as_str(),
+                            },
+                            Operation::PluginOp { path, .. } => path.as_str(),
+                        };
+                        if !filters.iter().any(|f| f == op_name) {
+                            continue;
+                        }
+                    }
+
                     let op_dict = pyo3::types::PyDict::new(py);
+                    op_dict.set_item("timestamp", node.timestamp)?;
+                    op_dict.set_item("node_id", node.id)?;
+                    op_dict.set_item("metadata", &metadata_dict)?;
+
                     match op {
                         Operation::UpdateAttr {
                             name,
@@ -289,7 +1124,7 @@ impl TachyonEngine {
                             op_dict.set_item("type", "ListPop")?;
                             op_dict.set_item("path", path)?;
                             op_dict.set_item("index", index)?;
-                            op_dict.set_item("value", popped_value)?;
+                            op_dict.set_item("popped_value", popped_value)?;
                         }
                         Operation::ListOp(ListOperation::Insert { path, index, value }) => {
                             op_dict.set_item("type", "ListInsert")?;
@@ -393,7 +1228,7 @@ impl TachyonEngine {
                             op_dict.set_item("delta", delta_blob)?;
                         }
                     }
-                    timeline.push(op_dict.into_any().unbind());
+                    timeline.push(op_dict.into_pyobject(py)?.into());
                 }
             }
         }
@@ -541,7 +1376,11 @@ impl TachyonEngine {
             id: node_id,
             parents: vec![self.current_node],
             deltas,
-            // metadata: HashMap::new(),
+            metadata: HashMap::new(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
         };
         self.nodes.insert(node_id, new_node);
         self.current_node = node_id;
@@ -575,7 +1414,7 @@ impl TachyonEngine {
     }
 
     fn move_to_node_id(&mut self, py: Python, node_id: usize) -> PyResult<()> {
-        let owner = self.owner.bind(py);
+        let owner = self.upgrade_owner(py)?;
         owner.setattr("_restoring", true)?;
 
         let (path_up, path_down) = self.get_shortest_path(self.current_node, node_id);
@@ -611,7 +1450,7 @@ impl TachyonEngine {
     }
 
     fn apply_node_deltas(&self, py: Python, node: &StateNode, forward: bool) -> PyResult<()> {
-        let owner = self.owner.bind(py);
+        let owner = self.upgrade_owner(py)?;
 
         let deltas: Box<dyn Iterator<Item = &Operation>> = if forward {
             Box::new(node.deltas.iter())
@@ -805,5 +1644,13 @@ impl TachyonEngine {
             }
         }
         Ok(())
+    }
+
+    fn upgrade_owner<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        self.owner.bind(py).upgrade().ok_or_else(move || {
+            PyErr::new::<pyo3::exceptions::PyReferenceError, _>(
+                "Janus object has been garbage collected (Tombstone state).",
+            )
+        })
     }
 }

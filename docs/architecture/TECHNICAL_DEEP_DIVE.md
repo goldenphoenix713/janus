@@ -20,24 +20,24 @@ The DAG architecture allows for "Multiverse" management. Users can create named 
     1. Plays `InverseOps` from `Branch_A` up to the LCA.
     2. Plays `ForwardOps` from the LCA down to `Branch_B`.
 
-## 3. Planned Features (Phase 4 & 5)
+## 3. 3-Way Branch Merging & Reconciliation
 
-### 3.1 3-Way Merge Logic (Planned)
+Merging two branches requires resolving potential conflicts between the **Base** (Common Ancestor), the **Target** (Current Branch), and the **Source** (Incoming Branch).
 
-Merging two branches requires resolving potential conflicts. The proposed algorithm will use a 3-way merge by comparing the **Base** (Common Ancestor), the **Left** (Current Branch), and the **Right** (Target Branch).
+### 3.1 Attribute Merging
 
-For any given attribute or container element $x$:
-...
+For simple attributes, Janus uses standard 3-way logic:
 
-$$
-\text{Result}(x) =
-\begin{cases}
-L & \text{if } L \neq B \text{ and } R = B \text{ (Only Left changed)} \\
-R & \text{if } R \neq B \text{ and } L = B \text{ (Only Right changed)} \\
-L & \text{if } L = R \text{ (Both changed to same value)} \\
-\text{CONFLICT} & \text{if } L \neq B, R \neq B, \text{ and } L \neq R
-\end{cases}
-$$
+* If only one branch changed the value from the Base, that change is accepted.
+* If both changed to the same value, it's accepted.
+* If both changed to different values, a **Conflict** is raised (or resolved by strategy).
+
+### 3.2 Container Reconciliation (Rebase Model)
+
+For lists and dictionaries, Janus employs a **Rebase Strategy** rather than a simple value-check. Source operations are transformed relative to the Target's history:
+
+* **List Indices**: If the Target inserted an item at index 0, all subsequent Source inserts at indices $\ge 0$ are shifted by $+1$ to maintain their relative position.
+* **Dictionary Keys**: If both branches edited the same key, a conflict is detected. If they edited different keys, the operations are safely merged.
 
 ## 4. The Tachyon-RS Engine Implementation (Rust)
 
@@ -73,17 +73,18 @@ pub struct StateNode {
     pub id: usize,
     pub parents: Vec<usize>,
     pub deltas: Vec<Operation>,
-    // Planned: pub metadata: HashMap<String, PyObject> (Waypoint 4.1)
+    pub metadata: HashMap<String, PyObject>,
+    pub timestamp: u64,
 }
 ```
 
-## 5. Memory Safety: The Tombstone Strategy (Planned - Phase 5)
+## 5. Memory Safety: The Tombstone Strategy
 
-To prevent history logs from causing memory leaks, Tachyon-RS will employ a **Hybrid Reference Strategy**:
+To prevent history logs from causing memory leaks, Tachyon-RS employs a **Hybrid Reference Strategy**:
 
 * **Strong References:** For immutable primitives (int, str, bool).
-* **Weak References (`PyWeakref`):** For complex Python objects.
-* **Tombstones:** If a `revert()` or `switch()` encounters a cleared WeakRef, Tachyon marks that branch as "collapsed".
+* **Weak References (`PyWeakref`):** For complex Python objects (the Engine owner).
+* **Tombstones:** If the owner object is garbage collected, the engine enters a **Tombstone State**. Any attempt to revert or mutate state will raise a Python `ReferenceError`.
 
 ## 6. Computational Complexity
 
@@ -113,3 +114,18 @@ For third-party plugins (Pandas, NumPy), Janus uses **Shadow Snapshots** to dete
 4. **Update Shadow**: The shadow is refreshed with a new snapshot.
 
 This allows Janus to track `df.iloc[0,0] = 99` even though it's not a direct attribute assignment on the Janus owner.
+
+## 9. Node Metadata & Semantic Tagging
+
+Every node in the state graph can store arbitrary Python objects as metadata. This enables:
+
+* **Timeline Search**: Finding nodes based on user-defined metrics (e.g., `sim.tag_moment(loss=0.01)`).
+* **Result Persistence**: Storing non-state data (execution time, external logs) alongside the state version.
+* **Global Inspection**: Querying metadata from any node in the multiverse without jumping to it via `sim.get_all_tags(label="branch_name")`.
+
+## 10. Timeline Filtering & Multiversal Search
+
+As the state DAG grows, Janus provides two primary discovery mechanisms:
+
+1. **Vertical Search (Filtering)**: Using `extract_timeline(filter_attr=["x"])`, the engine performs an $O(N)$ walk from root to leaf, but only yields operations that mutated the specified attribute(s). This is critical for debugging "when did this specific value change?".
+2. **Horizontal Search (Discovery)**: Using `find_moments(key=value)`, the engine performs a global lookup across all `StateNode` metadata stores. This allows joining disparite branches based on semantic tags (e.g., "Find all nodes where `loss < 0.1` regardless of branch").

@@ -99,13 +99,10 @@ pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38", "multipl
 use pyo3::prelude::*;
 use std::collections::HashMap;
 
-#[derive(Clone)]
 pub enum Operation {
     UpdateAttr { name: String, old_value: PyObject, new_value: PyObject },
-    ListPop { path: String, index: usize, popped_value: PyObject },
-    ListInsert { path: String, index: usize, value: PyObject },
-    // THE FOUNDATION FOR PLUGINS:
-    // Tachyon doesn't need to know what a DataFrame is. It just stores the blob.
+    ListOp(ListOperation),
+    DictOp(DictOperation),
     PluginOp { path: String, adapter_name: String, delta_blob: PyObject },
 }
 
@@ -155,6 +152,8 @@ impl TachyonEngine {
     pub fn move_to(&mut self, py: Python, label: String) -> PyResult<()> { ... }
     pub fn create_branch(&mut self, label: String) { ... }
     pub fn delete_branch(&mut self, label: String) -> PyResult<()> { ... }
+    pub fn merge_branch(&mut self, source_label: String, strategy: String) -> PyResult<()> { ... }
+    pub fn get_graph_data(&self, py: Python) -> PyResult<PyObject> { ... }
 }
 ```
 
@@ -265,6 +264,14 @@ class MultiverseBase(JanusBase):
 
     def extract_timeline(self, label: str) -> list[dict[str, Any]]:
         return self._engine.extract_timeline(label)
+
+    def merge(self, label: str, strategy: str = "overshadow") -> None:
+        self._engine.merge_branch(label, strategy)
+
+    def visualize(self) -> str:
+        data = self._engine.get_graph_data()
+        from .viz import generate_mermaid
+        return generate_mermaid(data)
 ```
 
 ---

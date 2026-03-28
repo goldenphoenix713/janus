@@ -55,6 +55,47 @@ sim.jump_to("stable")
 print(sim.points)  # [1, 2, 3]
 ```
 
+## 📊 Visualization
+
+Janus can generate Mermaid diagrams of your state DAG, rendering complex branching history directly in your browser or Markdown viewer.
+
+```python
+sim = Simulation()
+sim.branch("dev")
+sim.points.append(10)
+sim.jump_to("main")
+sim.points.append(20)
+sim.merge("dev")
+
+print(sim.visualize())
+```
+
+**Mermaid Output Example:**
+
+```mermaid
+graph LR
+    node0("Node 0<br/><b>__genesis__</b>")
+    style node0 fill:#e1f5fe,stroke:#01579b
+    node1["Node 1"]
+    node2("Node 2<br/><b>dev</b>")
+    style node2 fill:#e1f5fe,stroke:#01579b
+    node3["Node 3"]
+    node4(("Node 4<br/><b>main</b>"))
+    style node4 fill:#ff9ce6,stroke:#333,stroke-width:4px
+    node0 --> node1
+    node1 --> node2
+    node1 --> node3
+    node3 --> node4
+    node2 --> node4
+```
+
+## 🔀 Container-Aware Merging
+
+Janus supports **intelligent 3-way reconciliation** for native Python lists and dictionaries. Unlike blind-append approaches, Janus **rebases** parallel mutations:
+
+- **List Index Shifting**: If two branches insert items at different indices, Janus automatically shifts indices to preserve intent.
+- **Conflict Detection**: Detects and resolves parallel edits to the same dictionary keys or list positions according to configurable strategies (`strict`, `overshadow`, `preserve`).
+
 ## 🏗️ Architectural Pillars
 
 1. **Extensible Plugin Registry**: Register a `JanusAdapter` to track `pandas.DataFrames`, `numpy.ndarrays`, `torch.Tensors`, or any custom object without slowing down the core engine.
