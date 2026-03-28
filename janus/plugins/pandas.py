@@ -17,6 +17,7 @@ try:
             if hasattr(root, "_janus_snapshot"):
                 return
 
+            snapshot: pd.DataFrame | pd.Series
             if isinstance(root, pd.DataFrame):
                 snapshot = pd.DataFrame(
                     root.values.copy(),
@@ -41,6 +42,7 @@ try:
             if getattr(root, "_janus_initiator", None) != id(obj):
                 return
 
+            current: pd.DataFrame | pd.Series
             if isinstance(root, pd.DataFrame):
                 current = pd.DataFrame(
                     root.values.copy(),
@@ -65,7 +67,7 @@ try:
 
     # ------- Tracked Data Structures ------- #
 
-    class TrackedSeries(pd.Series):  # type: ignore[misc]
+    class TrackedSeries(pd.Series):
         _metadata = ["_janus_engine", "_janus_name", "_janus_parent", "_restoring"]
         _pandas_adapter = "TrackedSeriesAdapter"
 
@@ -73,7 +75,7 @@ try:
             # Ensure we don't force a copy if data is a view
             if "copy" not in kwargs:
                 kwargs["copy"] = False
-            super().__init__(data=data, *args, **kwargs)
+            super().__init__(data=data, *args, **kwargs)  # type: ignore[call-arg]
 
         @property
         def _constructor(self) -> type[TrackedSeries]:
@@ -84,19 +86,19 @@ try:
             return TrackedDataFrame
 
         @property
-        def loc(self) -> BaseTrackedIndexer:
+        def loc(self) -> BaseTrackedIndexer:  # type: ignore[override]
             return BaseTrackedIndexer(self, "loc")
 
         @property
-        def iloc(self) -> BaseTrackedIndexer:
+        def iloc(self) -> BaseTrackedIndexer:  # type: ignore[override]
             return BaseTrackedIndexer(self, "iloc")
 
         @property
-        def at(self) -> BaseTrackedIndexer:
+        def at(self) -> BaseTrackedIndexer:  # type: ignore[override]
             return BaseTrackedIndexer(self, "at")
 
         @property
-        def iat(self) -> BaseTrackedIndexer:
+        def iat(self) -> BaseTrackedIndexer:  # type: ignore[override]
             return BaseTrackedIndexer(self, "iat")
 
         def __setattr__(self, key: str, value: Any) -> None:
@@ -113,7 +115,7 @@ try:
             _log_post_mutation(self, key)
             self._sync_to_parent()
 
-        def __setitem__(self, key: str, value: Any) -> None:
+        def __setitem__(self, key: Any, value: Any) -> None:
             if key in [*self._metadata, "_restoring"]:
                 super().__setitem__(key, value)
                 return
@@ -141,7 +143,7 @@ try:
                 finally:
                     object.__setattr__(parent, "_restoring", False)
 
-    class TrackedDataFrame(pd.DataFrame):  # type: ignore[misc]
+    class TrackedDataFrame(pd.DataFrame):
         _metadata = ["_janus_engine", "_janus_name", "_janus_parent", "_restoring"]
         _pandas_adapter = "TrackedDataFrameAdapter"
 
@@ -149,7 +151,7 @@ try:
             # Ensure we don't force a copy if data is a view
             if "copy" not in kwargs:
                 kwargs["copy"] = False
-            super().__init__(data=data, *args, **kwargs)
+            super().__init__(data=data, *args, **kwargs)  # type: ignore[call-arg]
 
         @property
         def _constructor(self) -> type[TrackedDataFrame]:
@@ -160,19 +162,19 @@ try:
             return TrackedSeries
 
         @property
-        def loc(self) -> BaseTrackedIndexer:
+        def loc(self) -> BaseTrackedIndexer:  # type: ignore[override]
             return BaseTrackedIndexer(self, "loc")
 
         @property
-        def iloc(self) -> BaseTrackedIndexer:
+        def iloc(self) -> BaseTrackedIndexer:  # type: ignore[override]
             return BaseTrackedIndexer(self, "iloc")
 
         @property
-        def at(self) -> BaseTrackedIndexer:
+        def at(self) -> BaseTrackedIndexer:  # type: ignore[override]
             return BaseTrackedIndexer(self, "at")
 
         @property
-        def iat(self) -> BaseTrackedIndexer:
+        def iat(self) -> BaseTrackedIndexer:  # type: ignore[override]
             return BaseTrackedIndexer(self, "iat")
 
         def __setattr__(self, key: str, value: Any) -> None:
@@ -189,7 +191,7 @@ try:
             _log_post_mutation(self, key)
             self._sync_to_parent()
 
-        def __setitem__(self, key: str, value: Any) -> None:
+        def __setitem__(self, key: Any, value: Any) -> None:
             if key in [*self._metadata, "_restoring"]:
                 super().__setitem__(key, value)
                 return
@@ -301,6 +303,7 @@ try:
                 target.index = old_df.index
                 target.columns = old_df.columns
             except Exception as e:
+                object.__setattr__(target, "_restoring", False)
                 raise RuntimeError(f"Failed to restore DataFrame: {e}")
             finally:
                 object.__setattr__(target, "_restoring", False)

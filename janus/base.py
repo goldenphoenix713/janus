@@ -16,6 +16,16 @@ try:
 except ImportError:
     PANDAS_INSTALLED = False
 
+try:
+    import numpy as np
+
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+
+if NUMPY_AVAILABLE:
+    from .plugins.numpy import TrackedNumpyArray
+
 
 class JanusBase:
     def __init__(self, mode: str) -> None:
@@ -66,17 +76,29 @@ class JanusBase:
             # Recursive Container Wrapping
             value = wrap_value(value, self._engine, name)
 
-            if PANDAS_INSTALLED:
-                if isinstance(value, pd.DataFrame):
-                    tracked = TrackedDataFrame(value)
-                    tracked._janus_engine = self._engine
-                    tracked._janus_name = name
-                    value = tracked
-                elif isinstance(value, pd.Series):
-                    tracked = TrackedSeries(value)
-                    tracked._janus_engine = self._engine
-                    tracked._janus_name = name
-                    value = tracked
+            if PANDAS_INSTALLED and isinstance(value, pd.DataFrame):
+                value = TrackedDataFrame(value)
+                value._janus_engine = self._engine
+                value._janus_name = name
+            elif PANDAS_INSTALLED and isinstance(value, pd.Series):
+                value = TrackedSeries(value)
+                value._janus_engine = self._engine
+                value._janus_name = name
+            elif NUMPY_AVAILABLE and isinstance(value, np.ndarray):
+                if not isinstance(value, TrackedNumpyArray):
+                    value = TrackedNumpyArray(value)
+
+                # Ensure engine is set on the root of the array chain
+                root = getattr(value, "_janus_parent", value)
+                if root is None:  # Should not happen with new logic, but for safety
+                    root = value
+
+                root._janus_engine = self._engine
+                root._janus_name = name
+
+                # Also ensure the current view has the engine reference
+                value._janus_engine = self._engine
+                value._janus_name = name
 
         # Log standard attribute update to Rust engine
         if not name.startswith("_"):

@@ -4,6 +4,16 @@ from typing import Any
 
 from .tachyon_rs import TachyonEngine, TrackedDictCore, TrackedListCore
 
+try:
+    import numpy as np
+
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+
+if NUMPY_AVAILABLE:
+    from .plugins.numpy import TrackedNumpyArray
+
 
 class TrackedList(list):  # type: ignore[type-arg]
     def __init__(self, items: list[Any], engine: TachyonEngine, name: str) -> None:
@@ -154,6 +164,16 @@ def wrap_value(value: Any, engine: TachyonEngine, path: str) -> Any:
     """Recursively wrap containers in Janus proxies."""
     if isinstance(value, (TrackedList, TrackedDict)):
         return value
+
+    if (
+        NUMPY_AVAILABLE
+        and isinstance(value, np.ndarray)
+        and not isinstance(value, TrackedNumpyArray)
+    ):
+        wrapped = TrackedNumpyArray(value)
+        wrapped._janus_engine = engine
+        wrapped._janus_name = path
+        return wrapped
 
     if isinstance(value, list):
         wrapped_list = TrackedList([], engine, path)

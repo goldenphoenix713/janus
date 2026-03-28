@@ -787,17 +787,18 @@ impl TachyonEngine {
                     let registry = py.import("janus.registry")?;
                     let registry_attr = registry.getattr("ADAPTER_REGISTRY")?;
                     let adapter_registry = registry_attr.downcast::<pyo3::types::PyDict>()?;
-                    for adapter in adapter_registry.values() {
-                        let type_name = adapter.get_type().name()?;
-                        let type_name_str = type_name.to_str()?;
-                        if type_name_str == adapter_name {
+                    for adapter_item in adapter_registry.values() {
+                        let class_obj = adapter_item.getattr("__class__")?;
+                        let name_attr = class_obj.getattr("__name__")?;
+                        let name_str: String = name_attr.extract()?;
+                        if name_str == adapter_name.as_str() {
                             let method = if forward {
                                 "apply_forward"
                             } else {
                                 "apply_backward"
                             };
                             let target = owner.call_method1("_resolve_path", (path.as_str(),))?;
-                            adapter.call_method1(method, (target, delta_blob))?;
+                            adapter_item.call_method1(method, (target, delta_blob))?;
                         }
                     }
                 }

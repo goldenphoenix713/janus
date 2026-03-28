@@ -165,6 +165,30 @@ Managing complex file system operations where multiple "what-if" paths are explo
 
 **Concept**: Janus as an open platform where the community defines the "rules of time travel" for domain-specific objects and workflows.
 
+### 10.1 Priority Plugin Roadmap
+
+Based on ecosystem prevalence and suitability for delta-tracking, the following plugins are targeted for future development:
+
+| Plugin | Key Technology | Delta Strategy |
+| :--- | :--- | :--- |
+| **Polars** | Apache Arrow | Columnar IPC buffers; leverage Polars' immutability for O(1) snapshots. |
+| **PyArrow** | Arrow IPC | RecordBatch-level diffing; zero-copy view tracking. |
+| **Pydantic** | `model_dump` | Intercept `__setattr__` on models; use `exclude_unset` for sparse delta logging. |
+| **PyTorch** | Tensors | Sparse index tracking or arithmetic deltas (`old = current - delta`) to avoid OOM. |
+| **SQLAlchemy** | Session Replay | Track ORM operations/SQL statements; "re-play" from a checkpoint on restore. |
+| **Xarray** | NetCDF/Zarr | Coordinate-aware diffing for N-dimensional datasets. |
+| **NetworkX** | Adjacency Lists | Graph-op logging (add_edge, remove_node) similar to `TrackedList`. |
+
+### 10.2 Architectural Trade-offs for Complex State
+
+- **Tensors & Large Arrays**: For libraries like PyTorch or NumPy, storing full `old_value` and `new_value` (as we do for scalars) is unsustainable. The plugin must implement a "Delta Arithmetic" approach where only the mathematical difference or changed indices are stored.
+- **External State (Databases)**: Tracking external state requires Janus to act as a **Transaction Logger**. Since Janus cannot literally "undo" a committed SQL transaction on a remote server, it must either use a local "Shadow Database" or rely on a "Checkpoint + Replay" strategy where the DB is restored to a base state and subsequent operations are re-applied to reach the desired branch node.
+- **Validation Frameworks (Pydantic)**: These plugins focus on **State Integrity**. The adapter should run validation logic during `apply_forward` to ensure that a branch switch doesn't result in an illegal object state.
+
+---
+
+## 🤝 11. Community & Plugin Ecosystem (Original Vision)
+
 **Vision**:
 
 - **User-Defined Operations**: Plugins that allow developers to define not just *what* is tracked, but *how* it is manipulated (e.g., custom logic for non-standard undo/redo).
