@@ -67,7 +67,7 @@ try:
 
     # ------- Tracked Data Structures ------- #
 
-    class TrackedSeries(pd.Series):
+    class TrackedSeries(pd.Series):  # type: ignore[misc]
         _metadata = ["_janus_engine", "_janus_name", "_janus_parent", "_restoring"]
         _pandas_adapter = "TrackedSeriesAdapter"
 
@@ -75,7 +75,7 @@ try:
             # Ensure we don't force a copy if data is a view
             if "copy" not in kwargs:
                 kwargs["copy"] = False
-            super().__init__(data=data, *args, **kwargs)  # type: ignore[call-arg]
+            super().__init__(data=data, *args, **kwargs)
 
         @property
         def _constructor(self) -> type[TrackedSeries]:
@@ -86,19 +86,19 @@ try:
             return TrackedDataFrame
 
         @property
-        def loc(self) -> BaseTrackedIndexer:  # type: ignore[override]
+        def loc(self) -> BaseTrackedIndexer:
             return BaseTrackedIndexer(self, "loc")
 
         @property
-        def iloc(self) -> BaseTrackedIndexer:  # type: ignore[override]
+        def iloc(self) -> BaseTrackedIndexer:
             return BaseTrackedIndexer(self, "iloc")
 
         @property
-        def at(self) -> BaseTrackedIndexer:  # type: ignore[override]
+        def at(self) -> BaseTrackedIndexer:
             return BaseTrackedIndexer(self, "at")
 
         @property
-        def iat(self) -> BaseTrackedIndexer:  # type: ignore[override]
+        def iat(self) -> BaseTrackedIndexer:
             return BaseTrackedIndexer(self, "iat")
 
         def __setattr__(self, key: str, value: Any) -> None:
@@ -143,7 +143,7 @@ try:
                 finally:
                     object.__setattr__(parent, "_restoring", False)
 
-    class TrackedDataFrame(pd.DataFrame):
+    class TrackedDataFrame(pd.DataFrame):  # type: ignore[misc]
         _metadata = ["_janus_engine", "_janus_name", "_janus_parent", "_restoring"]
         _pandas_adapter = "TrackedDataFrameAdapter"
 
@@ -151,7 +151,7 @@ try:
             # Ensure we don't force a copy if data is a view
             if "copy" not in kwargs:
                 kwargs["copy"] = False
-            super().__init__(data=data, *args, **kwargs)  # type: ignore[call-arg]
+            super().__init__(data=data, *args, **kwargs)
 
         @property
         def _constructor(self) -> type[TrackedDataFrame]:
@@ -162,19 +162,19 @@ try:
             return TrackedSeries
 
         @property
-        def loc(self) -> BaseTrackedIndexer:  # type: ignore[override]
+        def loc(self) -> BaseTrackedIndexer:
             return BaseTrackedIndexer(self, "loc")
 
         @property
-        def iloc(self) -> BaseTrackedIndexer:  # type: ignore[override]
+        def iloc(self) -> BaseTrackedIndexer:
             return BaseTrackedIndexer(self, "iloc")
 
         @property
-        def at(self) -> BaseTrackedIndexer:  # type: ignore[override]
+        def at(self) -> BaseTrackedIndexer:
             return BaseTrackedIndexer(self, "at")
 
         @property
-        def iat(self) -> BaseTrackedIndexer:  # type: ignore[override]
+        def iat(self) -> BaseTrackedIndexer:
             return BaseTrackedIndexer(self, "iat")
 
         def __setattr__(self, key: str, value: Any) -> None:
