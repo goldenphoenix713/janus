@@ -182,12 +182,6 @@ def test_at_scalar_mutation_rollback():
 
 
 @pytest.mark.skipif(not PANDAS_INSTALLED, reason="Pandas is not installed")
-@pytest.mark.xfail(
-    reason=(
-        "Pandas subclasses often return copies for single-row indexers,"
-        "breaking the view-link."
-    )
-)
 def test_view_propagation_mutation():
     """Verify that a view (TrackedSeries) updates the parent's Janus timeline."""
     store = MockPandasStore()

@@ -109,6 +109,7 @@ try:
             _log_pre_mutation(self, key)
             super().__setattr__(key, value)
             _log_post_mutation(self, key)
+            self._sync_to_parent()
 
         def __setitem__(self, key: str, value: Any):
             if key in [*self._metadata, "_restoring"]:
@@ -120,6 +121,21 @@ try:
             _log_pre_mutation(self, key)
             super().__setitem__(key, value)
             _log_post_mutation(self, key)
+            self._sync_to_parent()
+
+        def _sync_to_parent(self):
+            parent = getattr(self, "_janus_parent", None)
+            key = getattr(self, "_janus_index_key", None)
+            indexer_name = getattr(self, "_janus_indexer", None)
+
+            if parent is not None and key is not None and indexer_name is not None:
+                # Avoid recursive logging by setting _restoring on parent
+                object.__setattr__(parent, "_restoring", True)
+                try:
+                    indexer = getattr(parent, indexer_name)
+                    indexer[key] = self
+                finally:
+                    object.__setattr__(parent, "_restoring", False)
 
     class TrackedDataFrame(pd.DataFrame):
         _metadata = ["_janus_engine", "_janus_name", "_janus_parent", "_restoring"]
@@ -165,6 +181,7 @@ try:
             _log_pre_mutation(self, key)
             super().__setattr__(key, value)
             _log_post_mutation(self, key)
+            self._sync_to_parent()
 
         def __setitem__(self, key: str, value: Any):
             if key in [*self._metadata, "_restoring"]:
@@ -176,12 +193,28 @@ try:
             _log_pre_mutation(self, key)
             super().__setitem__(key, value)
             _log_post_mutation(self, key)
+            self._sync_to_parent()
+
+        def _sync_to_parent(self):
+            parent = getattr(self, "_janus_parent", None)
+            key = getattr(self, "_janus_index_key", None)
+            indexer_name = getattr(self, "_janus_indexer", None)
+
+            if parent is not None and key is not None and indexer_name is not None:
+                # Avoid recursive logging by setting _restoring on parent
+                object.__setattr__(parent, "_restoring", True)
+                try:
+                    indexer = getattr(parent, indexer_name)
+                    indexer[key] = self
+                finally:
+                    object.__setattr__(parent, "_restoring", False)
 
     # ------- Indexer Wrappers ------- #
 
     class BaseTrackedIndexer:
         def __init__(self, parent_df, indexer_name):
             self._parent = parent_df
+            self._indexer_name = indexer_name
             # Get the real pandas indexer (e.g., df.loc) from the base class
             self._real_indexer = getattr(
                 super(self._parent.__class__, self._parent), indexer_name
@@ -195,25 +228,17 @@ try:
             # Transparency for reads
             result = self._real_indexer[key]
 
-            # Use class-swapping to "Janus-ify" the result without forcing a copy.
+            # Use class-swapping or metadata injection to "Janus-ify" the result.
             # This is critical for preserving view-links in pandas subclasses.
-            if isinstance(result, pd.Series) and not isinstance(result, TrackedSeries):
-                result.__class__ = TrackedSeries
-                object.__setattr__(
-                    result,
-                    "_janus_engine",
-                    getattr(self._parent, "_janus_engine", None),
-                )
-                object.__setattr__(
-                    result, "_janus_name", getattr(self._parent, "_janus_name", "view")
-                )
-                # Link to the root parent for delegated logging
-                object.__setattr__(result, "_janus_parent", self._parent)
-                object.__setattr__(result, "_pandas_adapter", "TrackedSeriesAdapter")
-            elif isinstance(result, pd.DataFrame) and not isinstance(
-                result, TrackedDataFrame
-            ):
-                result.__class__ = TrackedDataFrame
+            if isinstance(result, (pd.Series, pd.DataFrame)):
+                if (isinstance(result, pd.Series) and 
+                    not isinstance(result, TrackedSeries)):
+                    result.__class__ = TrackedSeries
+                elif (isinstance(result, pd.DataFrame) and 
+                      not isinstance(result, TrackedDataFrame)):
+                    result.__class__ = TrackedDataFrame
+
+                # Always apply/update metadata for this view relationship
                 object.__setattr__(
                     result,
                     "_janus_engine",
@@ -223,7 +248,15 @@ try:
                     result, "_janus_name", getattr(self._parent, "_janus_name", "view")
                 )
                 object.__setattr__(result, "_janus_parent", self._parent)
-                object.__setattr__(result, "_pandas_adapter", "TrackedDataFrameAdapter")
+                object.__setattr__(result, "_janus_index_key", key)
+                object.__setattr__(result, "_janus_indexer", self._indexer_name)
+                
+                is_series = isinstance(result, pd.Series)
+                adapter = (
+                    "TrackedSeriesAdapter" if is_series 
+                    else "TrackedDataFrameAdapter"
+                )
+                object.__setattr__(result, "_pandas_adapter", adapter)
 
             return result
 
