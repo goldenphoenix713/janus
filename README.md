@@ -57,17 +57,22 @@ print(sim.points)  # [1, 2, 3]
 
 ## 📊 Visualization
 
-Janus can generate Mermaid diagrams of your state DAG, rendering complex branching history directly in your browser or Markdown viewer.
+Janus features a built-in visualization suite to inspect the state DAG.
+
+### Basic Visualization (Mermaid)
 
 ```python
-sim = Simulation()
-sim.branch("dev")
-sim.points.append(10)
-sim.jump_to("main")
-sim.points.append(20)
-sim.merge("dev")
-
+# Returns a Mermaid.js diagram string
 print(sim.visualize())
+```
+
+### Pluggable Backends (Matplotlib)
+
+Janus supports multiple backends through the `plot()` API:
+
+```python
+# Renders a graphical plot using Matplotlib/NetworkX
+fig = sim.plot(backend="matplotlib", title="Multiverse History")
 ```
 
 **Mermaid Output Example:**

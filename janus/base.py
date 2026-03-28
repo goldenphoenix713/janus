@@ -274,10 +274,20 @@ class MultiverseBase(JanusBase):
     def delete_branch(self, label: str) -> None:
         self._engine.delete_branch(label)
 
-    def visualize(self) -> str:
+    def plot(self, backend: str | None = None, **kwargs: Any) -> Any:
         """
-        Return a Mermaid diagram string representing the state DAG.
+        Visualize the multiverse DAG using a specialized backend.
+        Default backend can be configured via `janus.options.plotting.backend`.
         """
-        from .viz import to_mermaid
+        from .options import options
+        from .viz import get_backend
 
-        return to_mermaid(self)
+        backend_name = backend or options.plotting.backend
+        engine = get_backend(backend_name)
+        return engine.plot(self, **kwargs)
+
+    def visualize(self) -> Any:
+        """
+        Compatibility shortcut for Mermaid-based visualization.
+        """
+        return self.plot(backend="mermaid")

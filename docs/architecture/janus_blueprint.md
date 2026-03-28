@@ -268,10 +268,13 @@ class MultiverseBase(JanusBase):
     def merge(self, label: str, strategy: str = "overshadow") -> None:
         self._engine.merge_branch(label, strategy)
 
+    def plot(self, backend: str | None = None, **kwargs: Any) -> Any:
+        # Resolves backend and renders
+        ...
+
     def visualize(self) -> str:
-        data = self._engine.get_graph_data()
-        from .viz import generate_mermaid
-        return generate_mermaid(data)
+        # Shortcut for mermaid
+        ...
 ```
 
 ---

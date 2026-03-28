@@ -36,7 +36,7 @@ For simple attributes, Janus uses standard 3-way logic:
 
 For lists and dictionaries, Janus employs a **Rebase Strategy** rather than a simple value-check. Source operations are transformed relative to the Target's history:
 
-* **List Indices**: If the Target inserted an item at index 0, all subsequent Source inserts at indices $\ge 0$ are shifted by $+1$ to maintain their relative position.
+* **List Indices**: If the Target inserted an item at index 0, all subsequent Source inserts at indices $\ge 0$ are shifted by 0$ to maintain their relative position.
 * **Dictionary Keys**: If both branches edited the same key, a conflict is detected. If they edited different keys, the operations are safely merged.
 
 ## 4. The Tachyon-RS Engine Implementation (Rust)
@@ -128,4 +128,24 @@ Every node in the state graph can store arbitrary Python objects as metadata. Th
 As the state DAG grows, Janus provides two primary discovery mechanisms:
 
 1. **Vertical Search (Filtering)**: Using `extract_timeline(filter_attr=["x"])`, the engine performs an $O(N)$ walk from root to leaf, but only yields operations that mutated the specified attribute(s). This is critical for debugging "when did this specific value change?".
-2. **Horizontal Search (Discovery)**: Using `find_moments(key=value)`, the engine performs a global lookup across all `StateNode` metadata stores. This allows joining disparite branches based on semantic tags (e.g., "Find all nodes where `loss < 0.1` regardless of branch").
+2. **Horizontal Search (Discovery)**: Using `find_nodes_by_metadata(key, value)`, the engine performs a global lookup across all `StateNode` metadata stores. This allows joining disparite branches based on semantic tags (e.g., "Find all nodes where `loss < 0.1` regardless of branch").
+
+## 11. Visualization Architecture
+
+Janus employs a pluggable registry for state visualization:
+
+### 11.1 Backend Registry
+
+The `janus.viz` module manages a mapping of backend IDs to engine implementations.
+
+* **Mermaid**: (Default) Text-based generator for CI/CD and Markdown environments.
+* **Matplotlib**: Graphical generator using NetworkX topological layouts for local exploration.
+
+### 11.2 Global Options
+
+Users can configure project-wide defaults via the `janus.options` store:
+
+```python
+import janus
+janus.options.plotting.backend = "matplotlib"
+```

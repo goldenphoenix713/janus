@@ -1,53 +1,77 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from .base import MultiverseBase
 
 
-def to_mermaid(obj: "MultiverseBase") -> str:
-    """
-    Generate a Mermaid diagram string for the Janus multiverse.
+class VizBackend(Protocol):
+    """Protocol for Janus visualization backends."""
 
-    Returns a string that can be rendered in Mermaid-supported environments
-    (like GitHub, GitLab, or VS Code Mermaid plugins).
-    """
-    data = obj._engine.get_graph_data()
+    def plot(self, obj: "MultiverseBase", **kwargs: Any) -> Any:
+        """Render the multiverse DAG."""
+        ...
 
-    # Sort by ID for deterministic output
-    data.sort(key=lambda x: x["id"])
 
-    lines = ["graph LR"]  # Left to Right looks better for timelines
+class MermaidBackend:
+    """Renders the multiverse DAG as a Mermaid diagram string."""
 
-    # 1. Define nodes and labels
-    for node in data:
-        nid = node["id"]
-        labels = node["labels"]
-        is_current = node["is_current"]
+    def plot(self, obj: "MultiverseBase", **kwargs: Any) -> str:
+        data = obj._engine.get_graph_data()
+        data.sort(key=lambda x: x["id"])
 
-        # Format labels: "main, v1.0"
-        label_text = f"<br/><b>{', '.join(labels)}</b>" if labels else ""
-        node_text = f"Node {nid}{label_text}"
+        lines = ["graph LR"]
+        for node in data:
+            nid = node["id"]
+            labels = node["labels"]
+            is_current = node["is_current"]
 
-        # Styling and shapes
-        if is_current:
-            # Current node is a double-circle
-            lines.append(f'    node{nid}(("{node_text}"))')
-            lines.append(
-                f"    style node{nid} fill:#ff9ce6,stroke:#333,stroke-width:4px"
-            )
-        elif labels:
-            # Labeled nodes (milestones/branch heads) are rounded
-            lines.append(f'    node{nid}("{node_text}")')
-            lines.append(f"    style node{nid} fill:#e1f5fe,stroke:#01579b")
-        else:
-            # Intermediate nodes are rectangles
-            lines.append(f'    node{nid}["{node_text}"]')
+            label_text = f"<br/><b>{', '.join(labels)}</b>" if labels else ""
+            node_text = f"Node {nid}{label_text}"
 
-    # 2. Define edges
-    for node in data:
-        nid = node["id"]
-        # Parents are stored as a list (supports merge nodes)
-        for p_id in node["parents"]:
-            lines.append(f"    node{p_id} --> node{nid}")
+            if is_current:
+                lines.append(f'    node{nid}(("{node_text}"))')
+                lines.append(
+                    f"    style node{nid} fill:#ff9ce6,stroke:#333,stroke-width:4px"
+                )
+            elif labels:
+                lines.append(f'    node{nid}("{node_text}")')
+                lines.append(f"    style node{nid} fill:#e1f5fe,stroke:#01579b")
+            else:
+                lines.append(f'    node{nid}["{node_text}"]')
 
-    return "\n".join(lines)
+        for node in data:
+            nid = node["id"]
+            for p_id in node["parents"]:
+                lines.append(f"    node{p_id} --> node{nid}")
+
+        return "\n".join(lines)
+
+
+VIZ_BACKENDS: dict[str, VizBackend] = {
+    "mermaid": MermaidBackend(),
+}
+
+
+def get_backend(name: str) -> VizBackend:
+    """Retrieve a visualization backend by name."""
+    if name not in VIZ_BACKENDS:
+        # Simple lazy loading for matplotlib if it's added later
+        if name == "matplotlib":
+            try:
+                from .viz_mpl import MatplotlibBackend
+
+                VIZ_BACKENDS["matplotlib"] = MatplotlibBackend()
+                return VIZ_BACKENDS["matplotlib"]
+            except ImportError:
+                raise ImportError(
+                    "Matplotlib backend requires 'matplotlib' and 'networkx'. "
+                    "Install them to use this feature."
+                )
+
+        raise ValueError(f"Unknown visualization backend: {name}")
+    return VIZ_BACKENDS[name]
+
+
+def register_backend(name: str, backend: VizBackend) -> None:
+    """Register a new visualization backend."""
+    VIZ_BACKENDS[name] = backend
