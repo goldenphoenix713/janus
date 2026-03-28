@@ -1,25 +1,27 @@
+from typing import Any
+
 import pytest
 
 from janus import MultiverseBase
 
 
 class Inventory(MultiverseBase):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.items = []
+        self.items: list[Any] = []
 
 
-def test_timeline_extraction():
+def test_timeline_extraction() -> None:
     inv = Inventory()
-    inv.create_moment_label("empty")  # type: ignore
+    inv.create_moment_label("empty")
 
     inv.items.append("Sword")
-    inv.create_moment_label("armed")  # type: ignore
+    inv.create_moment_label("armed")
 
     inv.items.append("Shield")
 
     # Extract timeline from "armed" branch
-    timeline = inv.extract_timeline("armed")  # type: ignore
+    timeline = inv.extract_timeline("armed")
 
     # Should contain:
     # 1. Initial items=[] (UpdateAttr)
@@ -29,40 +31,40 @@ def test_timeline_extraction():
     assert timeline[-1]["value"] == "Sword"
 
 
-def test_list_reversion():
+def test_list_reversion() -> None:
     inv = Inventory()
-    inv.create_moment_label("base")  # type: ignore
+    inv.create_moment_label("base")
 
     inv.items.append("Potion")
     assert len(inv.items) == 1
 
-    inv.jump_to("base")  # type: ignore
+    inv.jump_to("base")
     assert len(inv.items) == 0
 
 
 class Config(MultiverseBase):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.settings = {}
+        self.settings: dict[str, Any] = {}
 
 
-def test_dict_reversion():
+def test_dict_reversion() -> None:
     c = Config()
-    c.create_moment_label("empty")  # type: ignore
+    c.create_moment_label("empty")
 
     c.settings["theme"] = "dark"
-    c.create_moment_label("themed")  # type: ignore
+    c.create_moment_label("themed")
 
     c.settings["font"] = "Inter"
     assert c.settings["theme"] == "dark"
     assert c.settings["font"] == "Inter"
 
     # Revert to empty
-    c.jump_to("empty")  # type: ignore
+    c.jump_to("empty")
     assert len(c.settings) == 0
 
     # Revert to themed
-    c.jump_to("themed")  # type: ignore
+    c.jump_to("themed")
     assert c.settings["theme"] == "dark"
     assert "font" not in c.settings
 

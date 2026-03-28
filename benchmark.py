@@ -8,20 +8,21 @@ from janus import TimelineBase
 
 # 1. Define the Janus-tracked class
 class LargeState(TimelineBase):
-    def __init__(self, size):
+    def __init__(self, size: int) -> None:
+        super().__init__()
         self.data = list(range(size))
 
 
 # 2. Define a standard class for deepcopy comparison
 class StandardState:
-    def __init__(self, size):
+    def __init__(self, size: int) -> None:
         self.data = list(range(size))
 
 
-def run_benchmark():
+def run_benchmark() -> None:
     sizes = [100, 1000, 10000, 100000, 1000000]
-    janus_times = []
-    deepcopy_times = []
+    janus_times: list[float] = []
+    deepcopy_times: list[float] = []
 
     print(f"{'Size (N)':<15} | {'Janus Snapshot (s)':<20} | {'Deepcopy (s)':<15}")
     print("-" * 55)
@@ -32,8 +33,10 @@ def run_benchmark():
         s_obj = StandardState(n)
 
         # Benchmark Janus Snapshot (O(1))
-        # We time the snapshot() call which just marks a length in Rust
-        j_time = timeit.timeit(lambda: j_obj.snapshot("test"), number=100) / 100  # type: ignore
+        # We time the snapshot() call which just marks a node in Rust
+        j_time = (
+            timeit.timeit(lambda: j_obj.create_moment_label("test"), number=100) / 100
+        )
         janus_times.append(j_time)
 
         # Benchmark Deepcopy (O(N))

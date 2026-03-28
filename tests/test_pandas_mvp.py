@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 from janus.base import MultiverseBase
@@ -14,14 +16,14 @@ except ImportError:
 
 @pytest.mark.skipif(not PANDAS_INSTALLED, reason="Pandas is not installed")
 class MockPandasStore(MultiverseBase):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.df = None
-        self.s = None
+        self.df: Any = None
+        self.s: Any = None
 
 
 @pytest.mark.skipif(not PANDAS_INSTALLED, reason="Pandas is not installed")
-def test_pandas_wrapping():
+def test_pandas_wrapping() -> None:
     """Verify that pd.DataFrame and pd.Series are auto-wrapped."""
     store = MockPandasStore()
 
@@ -45,7 +47,7 @@ def test_pandas_wrapping():
 
 
 @pytest.mark.skipif(not PANDAS_INSTALLED, reason="Pandas is not installed")
-def test_dataframe_mutation_rollback():
+def test_dataframe_mutation_rollback() -> None:
     """Verify that in-place DataFrame mutations can be undone."""
     store = MockPandasStore()
     store.df = pd.DataFrame({"A": [1, 2, 3]})
@@ -65,7 +67,7 @@ def test_dataframe_mutation_rollback():
 
 
 @pytest.mark.skipif(not PANDAS_INSTALLED, reason="Pandas is not installed")
-def test_series_mutation_rollback():
+def test_series_mutation_rollback() -> None:
     """Verify that in-place Series mutations can be undone."""
     store = MockPandasStore()
     store.s = pd.Series([1, 2, 3])
@@ -85,7 +87,7 @@ def test_series_mutation_rollback():
 
 
 @pytest.mark.skipif(not PANDAS_INSTALLED, reason="Pandas is not installed")
-def test_pandas_branching():
+def test_pandas_branching() -> None:
     """Verify pandas state restoration across multiverse branches."""
     store = MockPandasStore()
     store.df = pd.DataFrame({"val": [10]})
@@ -111,7 +113,7 @@ def test_pandas_branching():
 
 
 @pytest.mark.skipif(not PANDAS_INSTALLED, reason="Pandas is not installed")
-def test_pandas_method_chaining():
+def test_pandas_method_chaining() -> None:
     """Verify that operation results remain Janus-aware."""
     store = MockPandasStore()
     store.df = pd.DataFrame({"A": [3, 1, 2], "B": [4, 5, 6]})
@@ -129,7 +131,7 @@ def test_pandas_method_chaining():
 
 
 @pytest.mark.skipif(not PANDAS_INSTALLED, reason="Pandas is not installed")
-def test_loc_cell_mutation_rollback():
+def test_loc_cell_mutation_rollback() -> None:
     """Verify that .loc[row, col] mutation is correctly undone."""
     store = MockPandasStore()
     store.df = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
@@ -152,7 +154,7 @@ def test_loc_cell_mutation_rollback():
 
 
 @pytest.mark.skipif(not PANDAS_INSTALLED, reason="Pandas is not installed")
-def test_iloc_slice_mutation_rollback():
+def test_iloc_slice_mutation_rollback() -> None:
     """Verify that .iloc slice mutation is correctly undone."""
     store = MockPandasStore()
     store.df = pd.DataFrame({"A": [1, 2, 3]})
@@ -167,7 +169,7 @@ def test_iloc_slice_mutation_rollback():
 
 
 @pytest.mark.skipif(not PANDAS_INSTALLED, reason="Pandas is not installed")
-def test_at_scalar_mutation_rollback():
+def test_at_scalar_mutation_rollback() -> None:
     """Verify that .at scalar mutation is correctly undone."""
     store = MockPandasStore()
     store.df = pd.DataFrame({"A": [1, 2]})
@@ -182,7 +184,7 @@ def test_at_scalar_mutation_rollback():
 
 
 @pytest.mark.skipif(not PANDAS_INSTALLED, reason="Pandas is not installed")
-def test_view_propagation_mutation():
+def test_view_propagation_mutation() -> None:
     """Verify that a view (TrackedSeries) updates the parent's Janus timeline."""
     store = MockPandasStore()
     store.df = pd.DataFrame({"val": [1, 2, 3]})

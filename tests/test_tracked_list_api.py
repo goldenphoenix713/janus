@@ -2,14 +2,14 @@ from janus import TimelineBase
 
 
 class Hero(TimelineBase):
-    def __init__(self, name, hp):
+    def __init__(self, name: str, hp: int) -> None:
         super().__init__()
         self.name = name
         self.hp = hp
-        self.items = []
+        self.items: list[str] = []
 
 
-def test_list_insert():
+def test_list_insert() -> None:
     h = Hero("Arthur", 100)
     h.items.append("Sword")
     h.items.insert(0, "Shield")
@@ -22,7 +22,7 @@ def test_list_insert():
     assert h.items == ["Shield", "Sword"]
 
 
-def test_list_remove():
+def test_list_remove() -> None:
     h = Hero("Arthur", 100)
     h.items.extend(["Sword", "Shield", "Potion"])
     assert h.items == ["Sword", "Shield", "Potion"]
@@ -34,7 +34,7 @@ def test_list_remove():
     assert h.items == ["Sword", "Shield", "Potion"]
 
 
-def test_list_clear():
+def test_list_clear() -> None:
     h = Hero("Arthur", 100)
     h.items.extend(["Sword", "Shield"])
     h.items.clear()
@@ -44,7 +44,7 @@ def test_list_clear():
     assert h.items == ["Sword", "Shield"]
 
 
-def test_list_setitem_atomic():
+def test_list_setitem_atomic() -> None:
     h = Hero("Arthur", 100)
     h.items.append("Sword")
     h.items[0] = "Excalibur"
@@ -58,7 +58,7 @@ def test_list_setitem_atomic():
     assert h.items[0] == "Excalibur"
 
 
-def test_list_delitem():
+def test_list_delitem() -> None:
     h = Hero("Arthur", 100)
     h.items.extend(["Sword", "Shield"])
     del h.items[0]
@@ -68,7 +68,7 @@ def test_list_delitem():
     assert h.items == ["Sword", "Shield"]
 
 
-def test_list_utilities():
+def test_list_utilities() -> None:
     h = Hero("Arthur", 100)
     h.items.extend(["Sword", "Shield"])
 
@@ -84,5 +84,5 @@ def test_list_utilities():
     assert h.items != ["Sword"]
 
     # __iter__
-    items = [item for item in h.items]
+    items = list(h.items)
     assert items == ["Sword", "Shield"]

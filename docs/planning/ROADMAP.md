@@ -8,10 +8,10 @@ This roadmap outlines the path to a full implementation of the **Janus** archite
 
 *Goal: Implement the $O(1)$ state logging for basic attributes.*
 
-- **1.1 Attribute Interception**: Complete the `JanusBase` class's `__setattr__` logic to detect changes and call the engine.
-- **1.2 Delta Calculation**: Implement basic delta storage for primitives (ints, strings) in `engine.rs/Operation`.
-- **1.3 Linear Mode**: Finalize `mode="linear"` to support standard undo/redo without branching.
-- **⏱️ ETA: 2 Weeks**
+- **1.1 Attribute Interception**: Complete the `JanusBase` class's `__setattr__` logic to detect changes and call the engine. ✅
+- **1.2 Delta Calculation**: Implement basic delta storage for primitives (ints, strings) in `engine.rs/Operation`. ✅
+- **1.3 Linear Mode**: Finalize `mode="linear"` to support standard undo/redo without branching. ✅
+- **✅ Complete**
 
 ---
 
@@ -30,11 +30,11 @@ This roadmap outlines the path to a full implementation of the **Janus** archite
 
 *Goal: Support complex objects (Pandas) and nested structures.*
 
-- **3.1 AdapterRegistry**: Complete the `register_adapter` decorator and use it to handle "Plugin Blobs" in the Rust engine.
-- **3.2 TrackedList & TrackedDict**: Move beyond stubs. Proxy all mutating operations (append, pop, update) to the engine.
-- **3.3 Third-Party Plugins**: Initial adapters for `pandas.DataFrame` and `numpy.ndarray`. [/] (Phase A Complete!)
+- **3.1 AdapterRegistry**: Complete the `register_adapter` decorator and use it to handle "Plugin Blobs" in the Rust engine. ✅
+- **3.2 TrackedList & TrackedDict**: Python-side proxy classes with full API coverage and Rust-backed mutation logging. ✅
+- **3.3 Third-Party Plugins**: Pandas adapter complete (`TrackedDataFrame`, `TrackedSeries`, indexer wrappers). NumPy adapter not started.
 
-- **⏱️ ETA: 4 Weeks**
+- **✅ ~85% Complete**
 
 ---
 

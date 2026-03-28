@@ -10,11 +10,11 @@ Before laying out the work, here's where each roadmap phase actually stands toda
 
 | Phase | Roadmap Status | Actual Codebase Status |
 | :--- | :--- | :--- |
-| **P1 — Linear Foundation** | "2 Weeks" | **~100 % done.** Base classes (`TimelineBase` / `MultiverseBase`) and Rust-native `undo()` / `redo()` are complete, including "overwrite future" logic. |
-| **P2 — Multiversal Branching** | "3 Weeks" | **~95 % done.** DAG nodes, branching, and bidirectional `PluginOp` application (including Shadow Snapshots) are complete. **Gap:** merge logic. |
-| **P3 — Plugins & Containers** | "4 Weeks" | **~60 % done.** `TrackedList` and `TrackedDict` are logging correctly and handle `_restoring` state to prevent history pollution. |
-| **P4 — Timeline & Flattening** | "2 Weeks" | **~40 % done.** `extract_timeline` returns a flat list of dicts. **Gap:** no "history flattening / squash" (merge a branch into a linear sequence with net-effect deltas); no rich formatting or filtering; no timeline diff. |
-| **P5 — Tombstone & Memory** | "2 Weeks" | **0 % done.** No weak refs, no pruning, no benchmarks for memory. |
+| **P1 — Linear Foundation** | "2 Weeks" | **100% done.** Base classes (`TimelineBase` / `MultiverseBase`) and Rust-native `undo()` / `redo()` are complete, including "overwrite future" logic and linear-mode guards. |
+| **P2 — Multiversal Branching** | "3 Weeks" | **~95% done.** DAG nodes, branching, bidirectional `PluginOp` application (including Shadow Snapshots), branch deletion and listing are complete. **Gap:** merge logic. |
+| **P3 — Plugins & Containers** | "4 Weeks" | **~85% done.** `TrackedList` and `TrackedDict` are Python-side proxies with full API coverage (all standard methods implemented). Pandas adapter complete. **Gap:** NumPy adapter. |
+| **P4 — Timeline & Flattening** | "2 Weeks" | **~40% done.** `extract_timeline` returns a flat list of dicts. **Gap:** no "history flattening / squash"; no rich formatting or filtering; no timeline diff. |
+| **P5 — Tombstone & Memory** | "2 Weeks" | **0% done.** No weak refs, no pruning, no benchmarks for memory. |
 
 ---
 
@@ -265,11 +265,10 @@ Ensure robustness across complex state transitions and container nesting.
 
 ### Phase 3 Current State
 
-- `TrackedList`: append, pop, `\_\_getitem\_\_`, `\_\_len\_\_` → ✅
-- `TrackedList` missing: `\_\_setitem\_\_`, `extend`, `remove`, `insert`, `\_\_repr\_\_`, `\_\_iter\_\_`, `\_\_eq\_\_`, `clear`, slicing → ❌
-- `TrackedDict`: `\_\_setitem\_\_`, `\_\_delitem\_\_`, `\_\_getitem\_\_`, `\_\_contains\_\_`, `\_\_iter\_\_`, `keys`, `\_\_len\_\_`, `get` → ✅
-- `TrackedDict` missing: `update`, `pop`, `values`, `items`, `\_\_repr\_\_`, `\_\_eq\_\_`, `clear`, `setdefault` → ❌
-- Pandas/NumPy adapters → ❌ not started
+- `TrackedList`: Python `list` subclass with Rust `TrackedListCore` logging. All standard methods implemented: `append`, `extend`, `insert`, `pop`, `remove`, `clear`, `__setitem__`, `__delitem__`, `__getitem__`, `__len__`, `__iter__`, `__repr__`, `__eq__`, `__contains__` → ✅
+- `TrackedDict`: Python `dict` subclass with Rust `TrackedDictCore` logging. All standard methods implemented: `__setitem__`, `__delitem__`, `update`, `pop`, `popitem`, `setdefault`, `clear`, `__getitem__`, `keys`, `values`, `items`, `get`, `__len__`, `__contains__`, `__iter__`, `__repr__`, `__eq__` → ✅
+- Pandas adapter (`TrackedDataFrame`, `TrackedSeries`, indexer wrappers) → ✅ complete
+- NumPy adapter → ❌ not started
 
 ---
 
@@ -532,10 +531,7 @@ class BaseTrackedIndexer:
     def __init__(self, parent_df, indexer_name):
         self._parent = parent_df
         # Get the real pandas indexer (e.g., df.loc) from the base class
-        self._real_indexer = getattr(
-            super(self._parent.__class__, self._parent),
-            indexer_name,
-        )
+        self._real_indexer = getattr(super(parent_df.__class__, parent_df), indexer_name)
 
     def __getitem__(self, key):
         # Transparency for reads
@@ -601,18 +597,19 @@ uv run python tests/test_vs_deepcopy.py
 After each sprint, run the example from `README.md` interactively to verify the end-to-end experience:
 
 ```python
-from janus import janus
+from janus import MultiverseBase
 
-@janus(mode="multiversal")
-class Simulation:
-    def __init__(self):
+
+class Simulation(MultiverseBase):
+    def __init__(self) -> None:
+        super().__init__()
         self.points = [1, 2, 3]
 
 sim = Simulation()
 sim.branch("stable")
 sim.points.append(999)
 print(sim.points)       # Should show [1, 2, 3, 999]
-sim.switch("stable")
+sim.jump_to("stable")
 print(sim.points)       # Should show [1, 2, 3]
 ```
 

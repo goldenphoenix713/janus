@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..registry import JanusAdapter, register_adapter
+from janus.registry import JanusAdapter, register_adapter
 
 try:
     import pandas as pd
 
     # ------- Helper Functions ------- #
 
-    def _log_pre_mutation(obj: TrackedDataFrame | TrackedSeries, name: str):
+    def _log_pre_mutation(obj: TrackedDataFrame | TrackedSeries, name: str) -> None:
         root = getattr(obj, "_janus_parent", obj)
         if hasattr(root, "_janus_engine"):
             # Avoid nested logging: if a snapshot already exists, we are already
@@ -34,7 +34,7 @@ try:
             object.__setattr__(root, "_janus_snapshot", snapshot)
             object.__setattr__(root, "_janus_initiator", id(obj))
 
-    def _log_post_mutation(obj: TrackedDataFrame | TrackedSeries, name: str):
+    def _log_post_mutation(obj: TrackedDataFrame | TrackedSeries, name: str) -> None:
         root = getattr(obj, "_janus_parent", obj)
         if hasattr(root, "_janus_engine") and hasattr(root, "_janus_snapshot"):
             # Only the initiator who created the snapshot should finalize the log
@@ -65,65 +65,69 @@ try:
 
     # ------- Tracked Data Structures ------- #
 
-    class TrackedSeries(pd.Series):
+    class TrackedSeries(pd.Series):  # type: ignore[misc]
         _metadata = ["_janus_engine", "_janus_name", "_janus_parent", "_restoring"]
         _pandas_adapter = "TrackedSeriesAdapter"
 
-        def __init__(self, data=None, *args, **kwargs):
+        def __init__(self, data: Any = None, *args: Any, **kwargs: Any) -> None:
             # Ensure we don't force a copy if data is a view
             if "copy" not in kwargs:
                 kwargs["copy"] = False
             super().__init__(data=data, *args, **kwargs)
 
         @property
-        def _constructor(self):
+        def _constructor(self) -> type[TrackedSeries]:
             return TrackedSeries
 
         @property
-        def _constructor_expandim(self):
+        def _constructor_expandim(self) -> type[TrackedDataFrame]:
             return TrackedDataFrame
 
         @property
-        def loc(self):
+        def loc(self) -> BaseTrackedIndexer:
             return BaseTrackedIndexer(self, "loc")
 
         @property
-        def iloc(self):
+        def iloc(self) -> BaseTrackedIndexer:
             return BaseTrackedIndexer(self, "iloc")
 
         @property
-        def at(self):
+        def at(self) -> BaseTrackedIndexer:
             return BaseTrackedIndexer(self, "at")
 
         @property
-        def iat(self):
+        def iat(self) -> BaseTrackedIndexer:
             return BaseTrackedIndexer(self, "iat")
 
-        def __setattr__(self, key: str, value: Any):
+        def __setattr__(self, key: str, value: Any) -> None:
             if key in [*self._metadata, "_restoring"]:
-                return super().__setattr__(key, value)
+                super().__setattr__(key, value)
+                return
 
             if getattr(self, "_restoring", False):
-                return super().__setattr__(key, value)
+                super().__setattr__(key, value)
+                return
 
             _log_pre_mutation(self, key)
             super().__setattr__(key, value)
             _log_post_mutation(self, key)
             self._sync_to_parent()
 
-        def __setitem__(self, key: str, value: Any):
+        def __setitem__(self, key: str, value: Any) -> None:
             if key in [*self._metadata, "_restoring"]:
-                return super().__setitem__(key, value)
+                super().__setitem__(key, value)
+                return
 
             if getattr(self, "_restoring", False):
-                return super().__setitem__(key, value)
+                super().__setitem__(key, value)
+                return
 
             _log_pre_mutation(self, key)
             super().__setitem__(key, value)
             _log_post_mutation(self, key)
             self._sync_to_parent()
 
-        def _sync_to_parent(self):
+        def _sync_to_parent(self) -> None:
             parent = getattr(self, "_janus_parent", None)
             key = getattr(self, "_janus_index_key", None)
             indexer_name = getattr(self, "_janus_indexer", None)
@@ -137,65 +141,69 @@ try:
                 finally:
                     object.__setattr__(parent, "_restoring", False)
 
-    class TrackedDataFrame(pd.DataFrame):
+    class TrackedDataFrame(pd.DataFrame):  # type: ignore[misc]
         _metadata = ["_janus_engine", "_janus_name", "_janus_parent", "_restoring"]
         _pandas_adapter = "TrackedDataFrameAdapter"
 
-        def __init__(self, data=None, *args, **kwargs):
+        def __init__(self, data: Any = None, *args: Any, **kwargs: Any) -> None:
             # Ensure we don't force a copy if data is a view
             if "copy" not in kwargs:
                 kwargs["copy"] = False
             super().__init__(data=data, *args, **kwargs)
 
         @property
-        def _constructor(self):
+        def _constructor(self) -> type[TrackedDataFrame]:
             return TrackedDataFrame
 
         @property
-        def _constructor_sliced(self):
+        def _constructor_sliced(self) -> type[TrackedSeries]:
             return TrackedSeries
 
         @property
-        def loc(self):
+        def loc(self) -> BaseTrackedIndexer:
             return BaseTrackedIndexer(self, "loc")
 
         @property
-        def iloc(self):
+        def iloc(self) -> BaseTrackedIndexer:
             return BaseTrackedIndexer(self, "iloc")
 
         @property
-        def at(self):
+        def at(self) -> BaseTrackedIndexer:
             return BaseTrackedIndexer(self, "at")
 
         @property
-        def iat(self):
+        def iat(self) -> BaseTrackedIndexer:
             return BaseTrackedIndexer(self, "iat")
 
-        def __setattr__(self, key: str, value: Any):
+        def __setattr__(self, key: str, value: Any) -> None:
             if key in [*self._metadata, "_restoring"]:
-                return super().__setattr__(key, value)
+                super().__setattr__(key, value)
+                return
 
             if getattr(self, "_restoring", False):
-                return super().__setattr__(key, value)
+                super().__setattr__(key, value)
+                return
 
             _log_pre_mutation(self, key)
             super().__setattr__(key, value)
             _log_post_mutation(self, key)
             self._sync_to_parent()
 
-        def __setitem__(self, key: str, value: Any):
+        def __setitem__(self, key: str, value: Any) -> None:
             if key in [*self._metadata, "_restoring"]:
-                return super().__setitem__(key, value)
+                super().__setitem__(key, value)
+                return
 
             if getattr(self, "_restoring", False):
-                return super().__setitem__(key, value)
+                super().__setitem__(key, value)
+                return
 
             _log_pre_mutation(self, key)
             super().__setitem__(key, value)
             _log_post_mutation(self, key)
             self._sync_to_parent()
 
-        def _sync_to_parent(self):
+        def _sync_to_parent(self) -> None:
             parent = getattr(self, "_janus_parent", None)
             key = getattr(self, "_janus_index_key", None)
             indexer_name = getattr(self, "_janus_indexer", None)
@@ -212,7 +220,11 @@ try:
     # ------- Indexer Wrappers ------- #
 
     class BaseTrackedIndexer:
-        def __init__(self, parent_df, indexer_name):
+        def __init__(
+            self,
+            parent_df: TrackedDataFrame | TrackedSeries,
+            indexer_name: str,
+        ) -> None:
             self._parent = parent_df
             self._indexer_name = indexer_name
             # Get the real pandas indexer (e.g., df.loc) from the base class
@@ -220,22 +232,24 @@ try:
                 super(self._parent.__class__, self._parent), indexer_name
             )
 
-        def __getattr__(self, name):
+        def __getattr__(self, name: str) -> Any:
             # Proxy missing attributes (like _setitem_with_indexer) to the real indexer
             return getattr(self._real_indexer, name)
 
-        def __getitem__(self, key):
+        def __getitem__(self, key: Any) -> Any:
             # Transparency for reads
             result = self._real_indexer[key]
 
             # Use class-swapping or metadata injection to "Janus-ify" the result.
             # This is critical for preserving view-links in pandas subclasses.
             if isinstance(result, (pd.Series, pd.DataFrame)):
-                if (isinstance(result, pd.Series) and 
-                    not isinstance(result, TrackedSeries)):
+                if isinstance(result, pd.Series) and not isinstance(
+                    result, TrackedSeries
+                ):
                     result.__class__ = TrackedSeries
-                elif (isinstance(result, pd.DataFrame) and 
-                      not isinstance(result, TrackedDataFrame)):
+                elif isinstance(result, pd.DataFrame) and not isinstance(
+                    result, TrackedDataFrame
+                ):
                     result.__class__ = TrackedDataFrame
 
                 # Always apply/update metadata for this view relationship
@@ -250,20 +264,19 @@ try:
                 object.__setattr__(result, "_janus_parent", self._parent)
                 object.__setattr__(result, "_janus_index_key", key)
                 object.__setattr__(result, "_janus_indexer", self._indexer_name)
-                
+
                 is_series = isinstance(result, pd.Series)
                 adapter = (
-                    "TrackedSeriesAdapter" if is_series 
-                    else "TrackedDataFrameAdapter"
+                    "TrackedSeriesAdapter" if is_series else "TrackedDataFrameAdapter"
                 )
                 object.__setattr__(result, "_pandas_adapter", adapter)
 
             return result
 
-        def __setitem__(self, key, value):
-
+        def __setitem__(self, key: Any, value: Any) -> None:
             if getattr(self._parent, "_restoring", False):
-                return self._real_indexer.__setitem__(key, value)
+                self._real_indexer.__setitem__(key, value)
+                return
 
             # Intercept for writes
             _log_pre_mutation(self._parent, "indexer")
@@ -274,11 +287,11 @@ try:
 
     @register_adapter(TrackedDataFrame)
     class TrackedDataFrameAdapter(JanusAdapter):
-        def get_delta(self, old_snapshot, new_state):
+        def get_delta(self, old_snapshot: Any, new_state: Any) -> Any:
             # In this MVP, the delta object is just (old_df, new_df)
             return (old_snapshot, new_state.copy())
 
-        def apply_inverse(self, target, delta_blob):
+        def apply_backward(self, target: Any, delta_blob: Any) -> None:
             old_df, _ = delta_blob
             object.__setattr__(target, "_restoring", True)
             try:
@@ -292,7 +305,7 @@ try:
             finally:
                 object.__setattr__(target, "_restoring", False)
 
-        def apply_forward(self, target, delta_blob):
+        def apply_forward(self, target: Any, delta_blob: Any) -> None:
             _, new_df = delta_blob
             object.__setattr__(target, "_restoring", True)
             try:
@@ -304,16 +317,16 @@ try:
             finally:
                 object.__setattr__(target, "_restoring", False)
 
-        def get_snapshot(self, value):
+        def get_snapshot(self, value: Any) -> Any:
             return value.copy()
 
     @register_adapter(TrackedSeries)
     class TrackedSeriesAdapter(JanusAdapter):
-        def get_delta(self, old_snapshot, new_state):
+        def get_delta(self, old_snapshot: Any, new_state: Any) -> Any:
             # In this MVP, the delta object is just (old_series, new_series)
             return (old_snapshot, new_state.copy())
 
-        def apply_inverse(self, target, delta_blob):
+        def apply_backward(self, target: Any, delta_blob: Any) -> None:
             old_series, _ = delta_blob
             object.__setattr__(target, "_restoring", True)
             try:
@@ -326,7 +339,7 @@ try:
             finally:
                 object.__setattr__(target, "_restoring", False)
 
-        def apply_forward(self, target, delta_blob):
+        def apply_forward(self, target: Any, delta_blob: Any) -> None:
             _, new_series = delta_blob
             object.__setattr__(target, "_restoring", True)
             try:
@@ -338,7 +351,7 @@ try:
             finally:
                 object.__setattr__(target, "_restoring", False)
 
-        def get_snapshot(self, value):
+        def get_snapshot(self, value: Any) -> Any:
             return value.copy()
 
 except ImportError:

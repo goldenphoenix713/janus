@@ -50,16 +50,18 @@ Janus follows a strict **two-layer** architecture:
 The Python layer is user-facing. It provides:
 
 - **`base.py`**: Contains the `JanusBase` logic and the public mixins `TimelineBase` (linear) and `MultiverseBase` (branching). It intercepts `__setattr__` calls to log attribute mutations to the Rust engine and explicitly defines methods like `undo()`, `redo()`, and `branch()`.
-- **`registry.py`**: An `AdapterRegistry` mapping Python types to `JanusAdapter` implementations. Adapters define `get_delta(old, new) -> blob` and `apply_inverse(target, blob) -> None`, allowing third-party types (e.g., `pandas.DataFrame`) to participate in state tracking via opaque delta blobs.
+- **`containers.py`**: Python-side proxy classes (`TrackedList`, `TrackedDict`) that subclass native `list` and `dict` respectively. Each mutating method logs the appropriate `Operation` via Rust-backed `Core` objects (`TrackedListCore`, `TrackedDictCore`). Also contains `wrap_value()` for recursive container wrapping.
+- **`registry.py`**: An `AdapterRegistry` mapping Python types to `JanusAdapter` implementations. Adapters define `get_delta`, `apply_backward`, `apply_forward`, and `get_snapshot`, allowing third-party types (e.g., `pandas.DataFrame`) to participate in state tracking via opaque delta blobs.
 - **`tachyon_rs.pyi`**: Type stubs for the Rust extension module, providing IDE autocompletion and `mypy` compatibility.
+- **`plugins/pandas.py`**: Production-quality pandas adapter with `TrackedDataFrame`, `TrackedSeries`, `BaseTrackedIndexer` (wrapping `.loc`, `.iloc`, `.at`, `.iat`), and corresponding `TrackedDataFrameAdapter` / `TrackedSeriesAdapter` classes.
 
 ### 2.2 The Engine (`src/`)
 
 The Rust layer is the performance-critical backend:
 
-- **`engine.rs`** (~530 lines): Contains the full `TachyonEngine` implementation, `TrackedList`, and `TrackedDict`. The engine maintains a **Directed Acyclic Graph (DAG)** of `StateNode` objects. Each node stores a vector of `Operation` deltas relative to its parent. Branch switching uses **Lowest Common Ancestor (LCA)** path resolution with bi-directional delta application.
-- **`lib.rs`**: Registers `TachyonEngine`, `TrackedList`, and `TrackedDict` as PyO3 classes under the `tachyon_rs` Python module.
-- **`containers.rs`**: Currently a placeholder file. `TrackedList` and `TrackedDict` are implemented directly in `engine.rs`.
+- **`engine.rs`** (~800 lines): Contains the full `TachyonEngine` implementation, `TrackedListCore`, and `TrackedDictCore`. The engine maintains a **Directed Acyclic Graph (DAG)** of `StateNode` objects. Each node stores a vector of `Operation` deltas relative to its parent. Branch switching uses **Lowest Common Ancestor (LCA)** path resolution with bi-directional delta application. The `Operation` enum uses sub-enums `ListOperation` and `DictOperation` for container ops.
+- **`lib.rs`**: Registers `TachyonEngine`, `TrackedListCore`, and `TrackedDictCore` as PyO3 classes under the `tachyon_rs` Python module.
+- **`containers.rs`**: Currently a placeholder file. `TrackedListCore` and `TrackedDictCore` are implemented directly in `engine.rs`.
 
 ---
 
@@ -117,43 +119,57 @@ Branch switching (`switch_branch`) implements LCA-based DAG traversal:
 4. **Path down** (LCA → target): Apply deltas in **forward** order with **forward** semantics.
 5. A `_restoring` flag is set on the Python owner to prevent the `__setattr__` interceptor from re-logging mutations during restoration.
 
-> **Known gap**: `PluginOp` variants are silently skipped during switch (`_ => {}` wildcard in `apply_node_deltas`). This is tracked as Waypoint 2.1 in the implementation plan.
-
 ---
 
 ## 4. Tracked Containers
 
-### 4.1 `TrackedList` (Rust `#[pyclass]`)
+Janus containers use a **hybrid Python/Rust architecture**: Python-side proxy classes (`TrackedList`, `TrackedDict`) subclass native `list` and `dict` for full `isinstance` compatibility, while delegating mutation logging to Rust-backed `Core` objects (`TrackedListCore`, `TrackedDictCore`) for performance.
 
-A proxy for Python `list` objects. On construction, the decorator replaces raw `list` attribute values with `TrackedList` instances. Each mutating method logs the appropriate `Operation`:
+### 4.1 `TrackedList` (Python `list` subclass + Rust `TrackedListCore`)
 
-| Method | Implemented | Operation Logged |
+Raw `list` attribute values are automatically wrapped in `TrackedList` by `wrap_value()` during `__setattr__`. All standard `list` methods are supported:
+
+| Method | Status | Operation Logged |
 | :--- | :--- | :--- |
 | `append(value)` | ✅ | `ListInsert` at `len()` |
+| `extend(values)` | ✅ | `ListExtend` |
+| `insert(index, value)` | ✅ | `ListInsert` |
 | `pop(index?)` | ✅ | `ListPop` at resolved index |
-| `__getitem__(i)` | ✅ | None (read-only) |
-| `__len__()` | ✅ | None (read-only) |
-| `__setitem__` | ❌ | — |
-| `extend`, `insert`, `remove`, `clear` | ❌ | — |
-| `__iter__`, `__repr__`, `__eq__`, `__contains__` | ❌ | — |
+| `remove(value)` | ✅ | `ListPop` at found index |
+| `clear()` | ✅ | `ListClear` |
+| `__setitem__(i, val)` | ✅ | `ListReplace` |
+| `__delitem__(i)` | ✅ | `ListPop` |
+| `__getitem__`, `__len__`, `__iter__`, `__repr__`, `__eq__`, `__contains__` | ✅ | None (read-only, inherited from `list`) |
 
-### 4.2 `TrackedDict` (Rust `#[pyclass]`)
+### 4.2 `TrackedDict` (Python `dict` subclass + Rust `TrackedDictCore`)
 
-A proxy for Python `dict` objects. Uses `HashMap<String, PyObject>` internally (string keys only).
+Raw `dict` attribute values are automatically wrapped in `TrackedDict` by `wrap_value()`. All standard `dict` methods are supported:
 
-| Method | Implemented | Operation Logged |
+| Method | Status | Operation Logged |
 | :--- | :--- | :--- |
 | `__setitem__(key, val)` | ✅ | `DictUpdate` |
 | `__delitem__(key)` | ✅ | `DictDelete` |
-| `__getitem__`, `__contains__`, `__iter__`, `keys`, `__len__`, `get` | ✅ | None (read-only) |
-| `update`, `pop`, `values`, `items`, `setdefault`, `clear` | ❌ | — |
-| `__repr__`, `__eq__` | ❌ | — |
+| `update(other, **kw)` | ✅ | `DictUpdate` (batched) |
+| `pop(key, default?)` | ✅ | `DictPop` |
+| `popitem()` | ✅ | `DictPop` |
+| `setdefault(key, default?)` | ✅ | `DictUpdate` (if key absent) |
+| `clear()` | ✅ | `DictClear` |
+| `__getitem__`, `__contains__`, `__iter__`, `keys`, `values`, `items`, `get`, `__len__`, `__repr__`, `__eq__` | ✅ | None (read-only, inherited from `dict`) |
 
 ---
 
 ## 5. Plugin System
 
 The plugin system allows Janus to track mutations on arbitrary third-party types without the engine understanding their internals.
+
+**JanusAdapter Protocol** (defined in `registry.py`):
+
+| Method | Purpose |
+| :--- | :--- |
+| `get_delta(old_state, new_state) -> Any` | Compute a delta blob from old snapshot to current state |
+| `apply_backward(target, delta_blob) -> None` | Restore target to pre-delta state using the blob |
+| `apply_forward(target, delta_blob) -> None` | Apply delta to reach the post-mutation state |
+| `get_snapshot(value) -> Any` | Capture a snapshot of the current value for future delta calculation |
 
 **Registration flow**:
 
@@ -170,17 +186,22 @@ class Data:
 
 @register_adapter(Data)
 class DataAdapter(JanusAdapter):
-    def get_delta(self, old_state: Any, new_state: Any) -> str:
-        return f"diff:{getattr(old_state, 'value', None)}->{new_state.value}"
+    def get_delta(self, old_state: Any, new_state: Any) -> Any:
+        return (old_state, new_state.value)
 
-    def apply_inverse(self, target: Any, delta_blob: Any) -> None:
-        # Restore target to pre-delta state using the blob
-        pass
+    def apply_backward(self, target: Any, delta_blob: Any) -> None:
+        old_val, _ = delta_blob
+        target.value = old_val
+
+    def apply_forward(self, target: Any, delta_blob: Any) -> None:
+        _, new_val = delta_blob
+        target.value = new_val
+
+    def get_snapshot(self, value: Any) -> Any:
+        return value.value
 ```
 
-**Runtime behavior**: When `__setattr__` detects a value whose `type()` is a key in `ADAPTER_REGISTRY`, it calls `adapter.get_delta(old, new)` and logs a `PluginOp` in the Rust engine. The delta blob is opaque to Tachyon-RS.
-
-> **Known gap**: `apply_inverse` is never called during `switch_branch` (see §3.4).
+**Runtime behavior**: When `__setattr__` detects a value whose `type()` is a key in `ADAPTER_REGISTRY`, it uses a **Shadow Snapshot** mechanism: it calls `adapter.get_delta(shadow_value, new_value)` and logs a `PluginOp` in the Rust engine, then updates the shadow via `get_snapshot()`. During branch switching, the engine calls `apply_backward` (path up to LCA) or `apply_forward` (path down to target) on the adapter.
 
 ---
 
@@ -198,22 +219,29 @@ janus/
 │
 ├── src/                             # Rust source (Tachyon-RS engine)
 │   ├── lib.rs                       # PyO3 module registration
-│   ├── engine.rs                    # TachyonEngine, TrackedList, TrackedDict, Operation enum
+│   ├── engine.rs                    # TachyonEngine, TrackedListCore, TrackedDictCore, Operation enum
 │   └── containers.rs                # Placeholder (containers live in engine.rs)
 │
 ├── janus/                           # Python source (public API)
 │   ├── __init__.py                  # Exports: Base Classes, register_adapter
 │   ├── base.py                      # JanusBase, TimelineBase, MultiverseBase
+│   ├── containers.py                # TrackedList, TrackedDict, wrap_value()
 │   ├── registry.py                  # AdapterRegistry + JanusAdapter Protocol
 │   ├── tachyon_rs.pyi               # Type stubs for the Rust extension
 │   ├── tachyon_rs.abi3.so           # Compiled Rust shared library (platform-specific)
-│   └── py.typed                     # PEP 561 marker
+│   ├── py.typed                     # PEP 561 marker
+│   └── plugins/
+│       └── pandas.py                # TrackedDataFrame, TrackedSeries, indexer wrappers, adapters
 │
 ├── tests/                           # Test suite (pytest)
-│   ├── test_basic_revert.py         # Branching + switch_branch round-trip
-│   ├── test_multiverse.py           # Basic branching smoke test
+│   ├── test_basic_revert.py         # Label creation + jump_to round-trip
+│   ├── test_linear_behavior.py      # Undo/redo, overwrite-future, label pruning
+│   ├── test_multiverse.py           # Branching, branch deletion, error guards
 │   ├── test_plugins.py              # Plugin registration + PluginOp verification
 │   ├── test_timeline_containers.py  # TrackedList/TrackedDict reversion + timeline extraction
+│   ├── test_tracked_list_api.py     # Full TrackedList method coverage
+│   ├── test_tracked_dict_api.py     # Full TrackedDict method coverage
+│   ├── test_pandas_mvp.py           # Pandas wrapping, mutation rollback, branching, indexers
 │   ├── test_performance.py          # O(1) logging latency benchmark
 │   └── test_vs_deepcopy.py          # Janus snapshot vs deepcopy comparison
 │
@@ -262,19 +290,44 @@ Hooks run in the following order on every `git commit`:
 
 ### 7.2 Python — Ruff Configuration
 
-Configured in `pyproject.toml` under `[tool.ruff]`:
+Configured in `pyproject.toml` under `[tool.ruff]` and `[tool.ruff.lint]`:
 
 | Setting | Value | Meaning |
 | :--- | :--- | :--- |
 | `line-length` | `88` | Maximum line length (Black-compatible default) |
 | `target-version` | `"py312"` | Assumes Python 3.12+ syntax |
-| **Selected rule sets** | `E`, `F`, `I`, `U` | **E** = pycodestyle errors, **F** = Pyflakes, **I** = isort (import ordering), **U** = pyupgrade (modernize syntax) |
 | `ignore` | `[]` | No rules are suppressed |
+
+**Extended rule sets** (`extend-select`):
+
+| Code | Name | What It Enforces |
+| :--- | :--- | :--- |
+| `F` | Pyflakes | Undefined names, unused imports, etc. |
+| `W` | PyCodeStyle warnings | Whitespace issues, deprecated syntax |
+| `E` | PyCodeStyle errors | Syntax errors, indentation, line length |
+| `I` | isort | Import ordering and grouping |
+| `UP` | pyupgrade | Modernize syntax for target Python version |
+| `C4` | flake8-comprehensions | Correct comprehension/dict/list usage |
+| `FA` | flake8-future-annotations | Enforce `from __future__ import annotations` |
+| `ISC` | flake8-implicit-str-concat | Good string concatenation practices |
+| `ICN` | flake8-import-conventions | Common import aliases (e.g., `import numpy as np`) |
+| `RET` | flake8-return | Consistent return practices (e.g., no implicit `return None` after `return val`) |
+| `SIM` | flake8-simplify | Common simplification patterns (e.g., ternary, `contextlib.suppress`) |
+| `TID` | flake8-tidy-imports | Import hygiene (e.g., prefer absolute over relative parent imports) |
+| `TC` | flake8-type-checking | Move type-only imports into `TYPE_CHECKING` blocks |
+| `PTH` | flake8-use-pathlib | Prefer `pathlib` over `os.path` |
+| `TD` | flake8-todos | Enforce TODO comment format |
+| `NPY` | NumPy-specific rules | NumPy best practices |
 
 **Key implications for agents:**
 
 - **Import order matters**: Imports must follow isort conventions — stdlib → third-party → local, alphabetized within groups, separated by blank lines.
+- **Absolute imports for parent packages**: Use `from janus.registry import ...` not `from ..registry import ...` (`TID252`).
 - **Modern syntax**: Use `X | Y` union types over `Union[X, Y]`, `list[T]` over `List[T]`, etc.
+- **`from __future__ import annotations`**: Required in all Python source files (`FA100`).
+- **Explicit returns**: If a function has *any* `return <value>` branch, all branches must have an explicit `return` statement. Do not mix `return super().__setattr__(...)` with implicit fall-through (`RET503`).
+- **Use `contextlib.suppress`**: Prefer `with contextlib.suppress(Error)` over bare `try/except/pass` (`SIM105`).
+- **Use ternary operators**: Simple `if/else` assignments should use ternary form (`SIM108`).
 - **88-char lines**: Break long lines at 88 characters, not 79 or 120.
 
 ### 7.3 Python — Mypy Configuration
@@ -284,17 +337,22 @@ Configured in `pyproject.toml` under `[tool.mypy]`:
 | Setting | Value | Meaning |
 | :--- | :--- | :--- |
 | `python_version` | `"3.12"` | Type-check targeting Python 3.12 |
+| `strict` | `true` | Enables **all** strict-mode flags (see below) |
 | `check_untyped_defs` | `true` | Checks function bodies even if they lack annotations |
-| `disallow_untyped_defs` | `false` | Untyped function signatures are allowed (not enforced yet) |
 | `ignore_missing_imports` | `true` | Suppresses errors for missing third-party stubs |
 | `warn_return_any` | `true` | Warns when a function typed as returning a specific type returns `Any` |
 | `warn_unused_configs` | `true` | Warns about unused mypy config sections |
 
+> **Note**: `strict = true` enables a comprehensive set of flags including `disallow_untyped_defs`, `disallow_untyped_calls`, `disallow_incomplete_defs`, `no_implicit_optional`, `warn_redundant_casts`, `warn_unused_ignores`, and more.
+
 **Key implications for agents:**
 
-- Type hints are **strongly encouraged** but not strictly required on every function.
-- The `tachyon_rs.pyi` stub file provides types for the Rust extension — keep it in sync with any `#[pymethods]` changes.
-- `plotly.*` and `dash.*` modules have explicit `ignore_missing_imports` overrides.
+- **All functions must have type annotations.** Every function and method signature must include parameter types and return types (e.g., `def foo(self, x: int) -> None:`). This is enforced by `strict = true`.
+- **Calls to untyped functions are errors.** If you call a function that lacks annotations, mypy will flag it (`no-untyped-call`).
+- **`# type: ignore` comments must be valid.** Stale or unnecessary `# type: ignore` comments will cause `unused-ignore` errors. Only add them when truly needed, and always specify the error code (e.g., `# type: ignore[override]`).
+- **The `tachyon_rs.pyi` stub file provides types for the Rust extension** — keep it in sync with any `#[pymethods]` or `#[getter]` changes in `engine.rs`.
+- **`plotly.*` and `dash.*` modules** have explicit `ignore_missing_imports` overrides.
+- **Use `Any` sparingly but deliberately.** For dynamic containers and PyO3 boundaries, `Any` is acceptable. For pure Python logic, prefer concrete types.
 
 ### 7.4 Rust — Clippy & Rustfmt
 
@@ -417,10 +475,18 @@ class MyMultiverseObj(MultiverseBase):
 
 | Method | Availability | Description |
 | :--- | :--- | :--- |
-| `branch(label)` | Multiversal only | Creates a named branch at the current state node |
-| `snapshot(label)` | Both modes | Alias for `branch()` |
-| `switch(label)` | Both modes | Restores object state to the target branch via LCA traversal |
-| `extract_timeline(label)` | Both modes | Returns a list of operation dicts from root to the named branch |
+| `undo()` | Both modes | Undo the last operation |
+| `redo()` | Both modes | Redo the last undone operation |
+| `create_moment_label(label)` | Both modes | Label the current state node for future jumps |
+| `jump_to(label)` | Both modes | Restore state to a labeled moment via LCA traversal |
+| `get_labeled_moments()` | Both modes | List all available moment labels |
+| `branch(label)` | Multiversal only | Create a named branch at the current state node |
+| `create_branch(label)` | Multiversal only | Alias for `branch()` |
+| `switch_branch(label)` | Multiversal only | Switch to a different branch |
+| `list_branches()` | Multiversal only | List all branch names |
+| `delete_branch(label)` | Multiversal only | Delete a branch (cannot delete the active branch) |
+| `current_branch` | Multiversal only | Property returning the active branch name |
+| `extract_timeline(label)` | Multiversal only | Returns a list of operation dicts from root to the named branch |
 
 ### 9.3 Plugin Registration
 
@@ -433,7 +499,9 @@ from janus import JanusAdapter, register_adapter
 @register_adapter(TargetType)
 class MyAdapter(JanusAdapter):
     def get_delta(self, old_state: Any, new_state: Any) -> Any: ...
-    def apply_inverse(self, target: Any, delta_blob: Any) -> None: ...
+    def apply_backward(self, target: Any, delta_blob: Any) -> None: ...
+    def apply_forward(self, target: Any, delta_blob: Any) -> None: ...
+    def get_snapshot(self, value: Any) -> Any: ...
 ```
 
 ---
@@ -458,33 +526,38 @@ Verified benchmarks show **~27,000× speedup** over `copy.deepcopy()` for object
 
 | Phase | Status | Key Gaps |
 | :--- | :--- | :--- |
-| **P1 — Linear Foundation** | ~85% | No `undo()`/`redo()` API, no overwrite-future logic, no linear-mode guards |
-| **P2 — Multiversal Branching** | ~75% | `PluginOp` silently skipped during `switch_branch`, no merge, no branch deletion/listing |
-| **P3 — Plugins & Containers** | ~50% | `TrackedList` missing many standard methods, `TrackedDict` missing `update`/`pop`/`values`/`items`, no pandas/numpy adapters |
+| **P1 — Linear Foundation** | **100%** | — (complete: undo/redo, overwrite-future, linear guards) |
+| **P2 — Multiversal Branching** | **~95%** | No merge logic |
+| **P3 — Plugins & Containers** | **~85%** | `TrackedList`/`TrackedDict` fully implemented; pandas adapter complete; NumPy adapter not started |
 | **P4 — Timeline & Flattening** | ~40% | No history squash, no filtering, no timeline diff |
 | **P5 — Tombstone & Memory** | 0% | No weak refs, no pruning, no memory benchmarks |
 
-### 11.2 Planned API Change (Completed)
+### 11.2 Completed Milestones
 
-The refactor from the `@janus` decorator to explicit `TimelineBase` and `MultiverseBase` classes is complete. This resolved static analysis issues and improved API discoverability.
+- **Decorator → Base Classes**: The refactor from the `@janus` decorator to explicit `TimelineBase` and `MultiverseBase` is complete.
+- **`apply_inverse` → `apply_backward`**: Adapter protocol method renamed for clarity. `apply_forward` and `get_snapshot` added for bidirectional support.
+- **Shadow Snapshots**: `JanusBase.__setattr__` now stashes `_shadow_` attributes to correctly compute deltas for in-place mutated plugin objects.
+- **Container Hardening**: `TrackedList` and `TrackedDict` now subclass native Python `list`/`dict` (full `isinstance` compat) and delegate logging to Rust `Core` classes.
+- **Pandas Integration**: `TrackedDataFrame`, `TrackedSeries`, and indexer wrappers (`.loc`, `.iloc`, `.at`, `.iat`) are fully operational with undo/redo and branching.
+- **Strict Type Checking**: `mypy` runs in `strict` mode; all source and test files have comprehensive type annotations.
 
 ---
 
 ## 12. Key Conventions & Gotchas
 
-1. **`_restoring` flag**: During `switch_branch`, the engine sets `owner._restoring = True` to suppress `__setattr__` interception. Any code that bypasses this flag will cause infinite recursion or double-logging.
+1. **`_restoring` flag**: During `switch_branch` / `undo()`, the engine sets `owner._restoring = True` to suppress `__setattr__` interception. Any code that bypasses this flag will cause infinite recursion or double-logging. Tracked containers also check this flag via their `_is_silent` property.
 
-2. **`_engine` bypass**: Assignments to `_engine` and `_restoring` use `super().__setattr__()` or `object.__setattr__()` to avoid interception. Any attribute prefixed with `_` is **not logged** by the engine (see `base.py` line 36: `if not name.startswith("_")`).
+2. **`_engine` bypass**: Assignments to `_engine` and `_restoring` use `super().__setattr__()` or `object.__setattr__()` to avoid interception. Any attribute prefixed with `_` is **not logged** by the engine (see `base.py`: `if not name.startswith("_")`).
 
 3. **Maturin develop**: After any Rust change, you **must** run `uv run maturin develop` before testing. The `.so` file is symlinked into the venv, but changes are not hot-reloaded.
 
 4. **PyO3 `abi3` stable ABI**: The crate uses `abi3-py38`, meaning the compiled `.so` works across Python 3.8+. However, `pyproject.toml` requires `>= 3.12` at the project level.
 
-5. **String-only dict keys**: `TrackedDict` uses `HashMap<String, PyObject>` internally. Non-string keys are not supported and will cause a runtime type error.
+5. **No thread safety**: `TachyonEngine` is not `Send` or `Sync`. Janus is designed for single-threaded Python usage only.
 
-6. **No thread safety**: `TachyonEngine` is not `Send` or `Sync`. Janus is designed for single-threaded Python usage only.
+6. **`from __future__ import annotations`**: Required in all Python source files by the `FA` ruff rule. Without this, forward references in type annotations will fail at runtime.
 
-7. **Container re-wrapping**: When `switch_branch` restores a `list` or `dict` attribute, the restored value is a raw Python `list`/`dict` (not a `TrackedList`/`TrackedDict`). This is a known bug — subsequent mutations after switching will not be tracked until the attribute is reassigned.
+7. **Strict typing**: All functions must have parameter and return type annotations. `# type: ignore` comments must specify the error code (e.g., `# type: ignore[override]`).
 
 ---
 

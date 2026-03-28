@@ -12,11 +12,34 @@ Janus provides a Git-like API for branching, switching, and flattening the state
 
 Janus allows you to opt-in to complexity. Start with a simple linear history or dive into multiversal branching.
 
+### Linear Mode — Undo / Redo
+
+```python
+from janus import TimelineBase
+
+class Document(TimelineBase):
+    def __init__(self) -> None:
+        super().__init__()
+        self.text = ""
+
+doc = Document()
+doc.text = "Hello"
+doc.text = "Hello World"
+
+doc.undo()
+print(doc.text)  # "Hello"
+
+doc.redo()
+print(doc.text)  # "Hello World"
+```
+
+### Multiversal Mode — Branching
+
 ```python
 from janus import MultiverseBase
 
 class Simulation(MultiverseBase):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.points = [1, 2, 3]
 
@@ -25,17 +48,18 @@ sim.branch("stable")
 
 # Perform mutations
 sim.points.append(999)
-print(sim.points) # [1, 2, 3, 999]
+print(sim.points)  # [1, 2, 3, 999]
 
 # Multiversal rollback via Tachyon-RS
 sim.jump_to("stable")
-print(sim.points) # [1, 2, 3]
+print(sim.points)  # [1, 2, 3]
 ```
 
 ## 🏗️ Architectural Pillars
 
 1. **Extensible Plugin Registry**: Register a `JanusAdapter` to track `pandas.DataFrames`, `torch.Tensors`, or any custom object without slowing down the core engine.
 2. **Timeline Extraction**: Flatten complex multiversal paths into linear audit sequences for visualization and debugging.
+3. **Pandas Integration**: Built-in `TrackedDataFrame` and `TrackedSeries` with full indexer support (`.loc`, `.iloc`, `.at`, `.iat`).
 
 ## 🚀 Use Cases
 
@@ -53,7 +77,7 @@ print(sim.points) # [1, 2, 3]
 
 ## ⚡ Powered by Tachyon-RS
 
-Under the hood, Janus offloads all state delta logic to **Tachyon-RS**, a specialized Rust engine that operates on a Directed Acyclic Graph (DAG) of state nodes. By storing only the "inverse operations" and bi-directional transitions, Tachyon-RS enables time travel with $O(1)$ logging overhead.
+Under the hood, Janus offloads all state delta logic to **Tachyon-RS**, a specialized Rust engine that operates on a Directed Acyclic Graph (DAG) of state nodes. By storing only bi-directional operations, Tachyon-RS enables time travel with $O(1)$ logging overhead.
 
 ## License
 

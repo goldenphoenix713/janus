@@ -43,14 +43,32 @@ The engine is implemented using an adjacency list to manage the graph nodes effi
 ```rust
 pub enum Operation {
     UpdateAttr { name: String, old_value: PyObject, new_value: PyObject },
-    ListMutation { path: String, index: usize, op_type: ListOpType },
+    ListOp(ListOperation),
+    DictOp(DictOperation),
     PluginOp { path: String, adapter_name: String, delta_blob: PyObject },
+}
+
+pub enum ListOperation {
+    Insert { path: String, index: usize, value: PyObject },
+    Pop { path: String, index: usize, popped_value: PyObject },
+    Replace { path: String, index: usize, old_value: PyObject, new_value: PyObject },
+    Clear { path: String, old_values: Vec<PyObject> },
+    Extend { path: String, new_values: Vec<PyObject> },
+    Remove { path: String, value: PyObject },
+}
+
+pub enum DictOperation {
+    Update { path: String, keys: Vec<String>, old_values: Vec<PyObject>, new_values: Vec<PyObject> },
+    Delete { path: String, key: String, old_value: PyObject },
+    Clear { path: String, keys: Vec<String>, old_values: Vec<PyObject> },
+    Pop { path: String, key: String, old_value: PyObject },
 }
 
 pub struct StateNode {
     pub id: usize,
     pub parents: Vec<usize>,
     pub deltas: Vec<Operation>,
+    pub metadata: HashMap<String, PyObject>,
 }
 ```
 

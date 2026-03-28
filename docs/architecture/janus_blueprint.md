@@ -31,12 +31,17 @@ janus/
 │   └── containers.rs
 ├── janus/
 │   ├── __init__.py
-│   ├── base.py         # JanusBase, TimelineBase, MultiverseBase
-│   └── registry.py           # Plugin AdapterRegistry for 3rd-party types
+│   ├── base.py               # JanusBase, TimelineBase, MultiverseBase
+│   ├── containers.py         # TrackedList, TrackedDict, wrap_value()
+│   ├── registry.py           # Plugin AdapterRegistry for 3rd-party types
+│   ├── tachyon_rs.pyi        # Type stubs for the Rust extension
+│   └── plugins/
+│       └── pandas.py         # TrackedDataFrame, TrackedSeries, indexer wrappers
 └── tests/
     ├── __init__.py
     ├── test_multiverse.py    # E2E branching and switching tests
-    └── test_plugins.py       # Tests for custom adapter registration
+    ├── test_plugins.py       # Tests for custom adapter registration
+    └── ...                   # Additional test files
 ```
 
 ---
@@ -55,7 +60,7 @@ name = "janus"
 version = "0.2.0"
 description = "Extensible, non-linear state travel powered by the Tachyon-RS engine."
 authors = [{ name = "AI Dev Team", email = "dev@example.com" }]
-requires-python = ">=3.8"
+requires-python = ">=3.12"
 dependencies = []
 readme = "README.md"
 license = { text = "MIT OR Apache-2.0" }
@@ -172,7 +177,7 @@ from typing import Any, Protocol
 
 class JanusAdapter(Protocol):
     def get_delta(self, old_state: Any, new_state: Any) -> Any: ...
-    def apply_inverse(self, target: Any, delta_blob: Any) -> None: ...
+    def apply_backward(self, target: Any, delta_blob: Any) -> None: ...
     def apply_forward(self, target: Any, delta_blob: Any) -> None: ...
     def get_snapshot(self, value: Any) -> Any: ...
 
@@ -186,54 +191,75 @@ def register_adapter(target_class):
     return wrapper
 ```
 
-### `janus/decorators.py`
+### `janus/base.py`
 
 ```python
-from .tachyon_rs import TachyonEngine, TrackedList
+from .tachyon_rs import TachyonEngine
+from .containers import wrap_value
 from .registry import ADAPTER_REGISTRY
 
-def janus(mode="multiversal"):
-    """Class decorator configuring the state engine mode."""
-    def decorator(cls):
-        orig_init = cls.__init__
-        orig_setattr = cls.__setattr__
 
-        def __init__(self, *args, **kwargs):
-            object.__setattr__(self, '_engine', TachyonEngine(self, mode))
-            orig_init(self, *args, **kwargs)
+class JanusBase:
+    """Core logic: intercepts __setattr__, delegates to TachyonEngine."""
 
-        def __setattr__(self, name, value):
-            if name == '_engine':
-                return object.__setattr__(self, name, value)
+    def __init__(self, mode: str = "multiversal") -> None:
+        super().__setattr__("_restoring", False)
+        super().__setattr__("_engine", TachyonEngine(self, mode))
 
-            # Plugin Check Foundation
-            value_type = type(value)
-            if value_type in ADAPTER_REGISTRY:
-                # Let the adapter calculate the blob, pass to rust via PluginOp
-                pass
-            elif isinstance(value, list):
-                value = TrackedList(value, self._engine, name)
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in ["_engine", "_restoring"]:
+            super().__setattr__(name, value)
+            return
 
-            orig_setattr(self, name, value)
+        if self._restoring:
+            super().__setattr__(name, value)
+            return
 
-        def branch(self, label: str):
-            if mode == "linear":
-                raise ValueError("Branching is disabled in linear mode.")
-            self._engine.create_branch(label)
+        old_value = getattr(self, name, None)
 
-        def switch(self, label: str):
-            self._engine.switch_branch(label)
+        # Plugin check via ADAPTER_REGISTRY
+        value_type = type(value)
+        if value_type in ADAPTER_REGISTRY:
+            adapter = ADAPTER_REGISTRY[value_type]
+            # ... log PluginOp with shadow snapshot ...
+        else:
+            value = wrap_value(value, self._engine, name)
 
-        def extract_timeline(self, label: str):
-            return self._engine.extract_timeline(label)
+        if not name.startswith("_"):
+            self._engine.log_update_attr(name, old_value, value)
 
-        cls.__init__ = __init__
-        cls.__setattr__ = __setattr__
-        cls.branch = branch
-        cls.switch = switch
-        cls.extract_timeline = extract_timeline
-        return cls
-    return decorator
+        super().__setattr__(name, value)
+
+    def undo(self) -> None:
+        self._engine.undo()
+
+    def redo(self) -> None:
+        self._engine.redo()
+
+    def create_moment_label(self, label: str) -> None:
+        self._engine.create_moment(label)
+
+    def jump_to(self, label: str) -> None:
+        self._engine.move_to(label)
+
+
+class TimelineBase(JanusBase):
+    def __init__(self) -> None:
+        super().__init__(mode="linear")
+
+
+class MultiverseBase(JanusBase):
+    def __init__(self) -> None:
+        super().__init__(mode="multiversal")
+
+    def branch(self, label: str) -> None:
+        self._engine.create_branch(label)
+
+    def switch_branch(self, label: str) -> None:
+        self._engine.switch_branch(label)
+
+    def extract_timeline(self, label: str) -> list:
+        return self._engine.extract_timeline(label)
 ```
 
 ---

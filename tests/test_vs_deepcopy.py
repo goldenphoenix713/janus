@@ -8,22 +8,22 @@ from janus import MultiverseBase
 
 # 1. Define the Janus-tracked class
 class LargeState(MultiverseBase):
-    def __init__(self, size):
+    def __init__(self, size: int) -> None:
         super().__init__()
         self.data = list(range(size))
 
 
 # 2. Define a standard class for deepcopy comparison
 class StandardState:
-    def __init__(self, size):
+    def __init__(self, size: int) -> None:
         self.data = list(range(size))
 
 
-def run_benchmark():
+def run_benchmark() -> None:
     # Reduced sizes slightly for faster execution during dev
     sizes = [100, 1000, 10000, 100000, 500000]
-    janus_times = []
-    deepcopy_times = []
+    janus_times: list[float] = []
+    deepcopy_times: list[float] = []
 
     print(f"{'Size (N)':<15} | {'Janus Snapshot (s)':<20} | {'Deepcopy (s)':<15}")
     print("-" * 55)
@@ -35,7 +35,9 @@ def run_benchmark():
 
         # Benchmark Janus Snapshot (O(1))
         # We time the snapshot() call which just marks a node in Rust
-        j_time = timeit.timeit(lambda: j_obj.snapshot("test"), number=10) / 10  # type: ignore
+        j_time = (
+            timeit.timeit(lambda: j_obj.create_moment_label("test"), number=10) / 10
+        )
         janus_times.append(j_time)
 
         # Benchmark Deepcopy (O(N))
@@ -59,7 +61,7 @@ def run_benchmark():
     plt.legend()
     plt.grid(True, which="both", ls="-", alpha=0.5)
 
-    output_path = "/Users/eduardo.ruiz/PycharmProjects/Janus/performance_comparison.png"
+    output_path = "performance_comparison.png"
     plt.savefig(output_path)
     print(f"\nBenchmark complete. Chart saved as '{output_path}'.")
 

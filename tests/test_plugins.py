@@ -1,49 +1,51 @@
+from typing import Any
+
 from janus import JanusAdapter, MultiverseBase, register_adapter
 
 
 class Data:
-    def __init__(self, value):
+    def __init__(self, value: str) -> None:
         self.value = value
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Data({self.value})"
 
 
 @register_adapter(Data)
 class CustomDataAdapter(JanusAdapter):
-    def get_delta(self, old_state, new_state):
+    def get_delta(self, old_state: Any, new_state: Any) -> Any:
         # old_state is now the SNAPSHOT (a string)
         # new_state is the live Data instance
         old_val = old_state
         new_val = new_state.value
         return (old_val, new_val)
 
-    def apply_inverse(self, target, delta_blob):
+    def apply_backward(self, target: Any, delta_blob: Any) -> None:
         old_val, _ = delta_blob
         target.value = old_val
 
-    def apply_forward(self, target, delta_blob):
+    def apply_forward(self, target: Any, delta_blob: Any) -> None:
         _, new_val = delta_blob
         target.value = new_val
 
-    def get_snapshot(self, value):
+    def get_snapshot(self, value: Any) -> Any:
         # For this mock, the snapshot is simply the value string
         return value.value
 
 
 class Database(MultiverseBase):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.record = None
+        self.record: Any = None
 
 
-def test_plugin_registration():
+def test_plugin_registration() -> None:
     db = Database()
     db.record = Data("initial")
     db.record = Data("updated")
 
     # Verify timeline contains the PluginOp
-    timeline = db.extract_timeline("main")  # type: ignore
+    timeline = db.extract_timeline("main")
     plugin_ops = [op for op in timeline if op["type"] == "PluginOp"]
     assert len(plugin_ops) > 0
     assert plugin_ops[-1]["adapter"] == "CustomDataAdapter"
@@ -51,7 +53,7 @@ def test_plugin_registration():
     # "initial" when "updated" was assigned.
 
 
-def test_plugin_state_restoration_inplace():
+def test_plugin_state_restoration_inplace() -> None:
     """Verify that IN-PLACE mutations are correctly restored via Shadow Snapshots."""
     db = Database()
     record = Data("initial")
@@ -67,7 +69,7 @@ def test_plugin_state_restoration_inplace():
 
     assert db.record.value == "mutated-in-place"
 
-    # Jump back to main - should restore the original value via apply_inverse
+    # Jump back to main - should restore the original value via apply_backward
     db.jump_to("main")
     assert db.record.value == "initial"
 

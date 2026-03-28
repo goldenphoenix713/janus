@@ -2,12 +2,12 @@ from janus.base import MultiverseBase
 
 
 class State(MultiverseBase):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.data: dict[str, int | str] = {"a": 1, "b": 2}
 
 
-def test_tracked_dict_basic_mutation():
+def test_tracked_dict_basic_mutation() -> None:
     s = State()
     assert s.data["a"] == 1
 
@@ -18,7 +18,7 @@ def test_tracked_dict_basic_mutation():
     assert s.data["a"] == 1
 
 
-def test_tracked_dict_update():
+def test_tracked_dict_update() -> None:
     s = State()
     s.data.update({"b": 20, "c": 30})
     assert s.data["b"] == 20
@@ -29,7 +29,7 @@ def test_tracked_dict_update():
     assert "c" not in s.data
 
 
-def test_tracked_dict_pop():
+def test_tracked_dict_pop() -> None:
     s = State()
     val = s.data.pop("a")
     assert val == 1
@@ -39,7 +39,7 @@ def test_tracked_dict_pop():
     assert s.data["a"] == 1
 
 
-def test_tracked_dict_popitem():
+def test_tracked_dict_popitem() -> None:
     s = State()
     initial_len = len(s.data)
     key, val = s.data.popitem()
@@ -50,7 +50,7 @@ def test_tracked_dict_popitem():
     assert s.data[key] == val
 
 
-def test_tracked_dict_setdefault():
+def test_tracked_dict_setdefault() -> None:
     s = State()
     # Key exists
     val = s.data.setdefault("a", 100)
@@ -66,7 +66,7 @@ def test_tracked_dict_setdefault():
     assert "c" not in s.data
 
 
-def test_tracked_dict_clear():
+def test_tracked_dict_clear() -> None:
     s = State()
     s.data.clear()
     assert len(s.data) == 0
@@ -75,7 +75,7 @@ def test_tracked_dict_clear():
     assert s.data == {"a": 1, "b": 2}
 
 
-def test_tracked_dict_utilities():
+def test_tracked_dict_utilities() -> None:
     s = State()
     assert "a" in s.data
     assert list(s.data.keys()) == ["a", "b"] or list(s.data.keys()) == ["b", "a"]
@@ -92,7 +92,7 @@ def test_tracked_dict_utilities():
     assert s.data != {"a": 1}
 
 
-def test_tracked_dict_branching_reversion():
+def test_tracked_dict_branching_reversion() -> None:
     s = State()
     s.create_branch("dev")
     s.data["feature"] = "on"

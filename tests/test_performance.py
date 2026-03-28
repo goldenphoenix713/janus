@@ -5,20 +5,23 @@ from janus import MultiverseBase
 
 
 class BenchTarget(MultiverseBase):
-    def __init__(self):
+    def __init__(self) -> None:
         self.val = 0
 
 
-def benchmark_logging(depth_steps=[1000, 10000, 50000, 100000]):
+def benchmark_logging(depth_steps: list[int] | None = None) -> None:
+    if depth_steps is None:
+        depth_steps = [1000, 10000, 50000, 100000]
+
     obj = BenchTarget()
-    results = {}
+    results: dict[int, float] = {}
 
     print(f"{'Depth':>10} | {'Mean Latency (ns)':>20} | {'Std Dev':>10}")
     print("-" * 50)
 
     current_depth = 0
     for target_depth in depth_steps:
-        latencies = []
+        latencies: list[int] = []
         to_add = target_depth - current_depth
 
         for _ in range(to_add):
@@ -47,18 +50,18 @@ def benchmark_logging(depth_steps=[1000, 10000, 50000, 100000]):
         )
 
 
-def benchmark_restoration(distance=10000, total_depth=50000):
+def benchmark_restoration(distance: int = 10000, total_depth: int = 50000) -> None:
     obj = BenchTarget()
     # Build history
-    obj.branch("root")  # type: ignore
+    obj.branch("root")
     for _ in range(total_depth):
         obj.val += 1
 
-    obj.branch("deep_end")  # type: ignore
+    obj.branch("deep_end")
 
     # Measure restoration
     start = time.perf_counter()
-    obj.switch("root")  # type: ignore
+    obj.switch_branch("root")
     end = time.perf_counter()
 
     print(f"\nRestoration Time ({total_depth} nodes back to root): {end - start:.4f}s")

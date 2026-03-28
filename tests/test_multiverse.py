@@ -1,29 +1,31 @@
+from typing import Any
+
 import pytest
 
 from janus import MultiverseBase
 
 
 class Hero(MultiverseBase):
-    def __init__(self, name, hp):
+    def __init__(self, name: str, hp: int) -> None:
         super().__init__()
         self.name = name
         self.hp = hp
-        self.inventory = []
+        self.inventory: list[Any] = []
 
 
-def test_basic_branching():
+def test_basic_branching() -> None:
     h = Hero("Arthur", 100)
     assert h.name == "Arthur"
 
     # These will be stubs for now since engine.rs logic is minimal
-    h.branch("chaos-timeline")  # type: ignore
+    h.branch("chaos-timeline")
     h.hp = 50
 
-    h.jump_to("main")  # type: ignore
+    h.jump_to("main")
     # assert h.hp == 100 # This will fail until apply_inverse is implemented
 
 
-def test_delete_branch():
+def test_delete_branch() -> None:
     h = Hero("Arthur", 100)
     h.branch("chaos-timeline")
     h.hp = 50
@@ -43,7 +45,7 @@ def test_delete_branch():
     assert h.list_branches() == ["main"]
 
 
-def test_cannot_delete_active_branch():
+def test_cannot_delete_active_branch() -> None:
     h = Hero("Arthur", 100)
     h.branch("chaos-timeline")
     with pytest.raises(ValueError) as e:
@@ -51,7 +53,7 @@ def test_cannot_delete_active_branch():
     assert e.value.args[0] == "Cannot delete active branch: 'chaos-timeline'"
 
 
-def test_cannot_delete_nonexistent_branch():
+def test_cannot_delete_nonexistent_branch() -> None:
     h = Hero("Arthur", 100)
     with pytest.raises(KeyError) as excinfo:
         h.delete_branch("nonexistent-branch")

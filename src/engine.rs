@@ -1,8 +1,6 @@
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
 use std::collections::HashMap;
 
-#[derive(Clone)]
 pub enum Operation {
     UpdateAttr {
         name: String,
@@ -11,7 +9,6 @@ pub enum Operation {
     },
     ListOp(ListOperation),
     DictOp(DictOperation),
-    // THE FOUNDATION FOR PLUGINS:
     PluginOp {
         path: String,
         adapter_name: String,
@@ -19,7 +16,6 @@ pub enum Operation {
     },
 }
 
-#[derive(Clone)]
 pub enum ListOperation {
     Insert {
         path: String,
@@ -51,7 +47,6 @@ pub enum ListOperation {
     },
 }
 
-#[derive(Clone)]
 pub enum DictOperation {
     Clear {
         path: String,
@@ -92,15 +87,11 @@ pub enum Mode {
     Multiversal,
 }
 
-// Foundation for Timeline Extraction: Nodes know their parents.
-#[derive(Clone)]
 pub struct StateNode {
-    #[allow(dead_code)]
     pub id: usize,
     pub parents: Vec<usize>,
     pub deltas: Vec<Operation>,
-    #[allow(dead_code)]
-    pub metadata: HashMap<String, PyObject>,
+    // pub metadata: HashMap<String, PyObject>,
 }
 
 #[pyclass]
@@ -132,7 +123,7 @@ impl TachyonEngine {
                 id: 0,
                 parents: Vec::new(),
                 deltas: Vec::new(),
-                metadata: HashMap::new(),
+                // metadata: HashMap::new(),
             },
         );
 
@@ -152,6 +143,11 @@ impl TachyonEngine {
             next_node_id: 1,
             mode,
         }
+    }
+
+    #[getter]
+    pub fn owner(&self, py: Python) -> Py<PyAny> {
+        self.owner.clone_ref(py)
     }
 
     pub fn list_nodes(&self) -> Vec<String> {
@@ -252,8 +248,8 @@ impl TachyonEngine {
         self.current_node
     }
 
+    #[pyo3(signature = (label=None))]
     pub fn extract_timeline(&self, py: Python, label: Option<String>) -> PyResult<Vec<PyObject>> {
-        // TODO: Should this return a new engine with the extracted timeline?
         let target_node_id = match label {
             Some(label) => self
                 .node_labels
@@ -397,7 +393,7 @@ impl TachyonEngine {
                             op_dict.set_item("delta", delta_blob)?;
                         }
                     }
-                    timeline.push(op_dict.to_object(py));
+                    timeline.push(op_dict.into_any().unbind());
                 }
             }
         }
@@ -426,7 +422,7 @@ impl TachyonEngine {
         new_val: PyObject,
     ) {
         let replace = Operation::ListOp(ListOperation::Replace {
-            path: path.clone(),
+            path,
             index,
             old_value: old_val,
             new_value: new_val,
@@ -506,7 +502,7 @@ impl TachyonEngine {
         self.append_node(vec![op]);
     }
 
-    fn delete_branch(&mut self, label: String) -> PyResult<()> {
+    pub fn delete_branch(&mut self, label: String) -> PyResult<()> {
         if label == self.active_branch {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
                 "Cannot delete active branch: '{}'",
@@ -545,7 +541,7 @@ impl TachyonEngine {
             id: node_id,
             parents: vec![self.current_node],
             deltas,
-            metadata: HashMap::new(),
+            // metadata: HashMap::new(),
         };
         self.nodes.insert(node_id, new_node);
         self.current_node = node_id;
@@ -579,7 +575,7 @@ impl TachyonEngine {
     }
 
     fn move_to_node_id(&mut self, py: Python, node_id: usize) -> PyResult<()> {
-        let owner = self.owner.as_ref(py);
+        let owner = self.owner.bind(py);
         owner.setattr("_restoring", true)?;
 
         let (path_up, path_down) = self.get_shortest_path(self.current_node, node_id);
@@ -615,7 +611,8 @@ impl TachyonEngine {
     }
 
     fn apply_node_deltas(&self, py: Python, node: &StateNode, forward: bool) -> PyResult<()> {
-        let owner = self.owner.as_ref(py);
+        let owner = self.owner.bind(py);
+
         let deltas: Box<dyn Iterator<Item = &Operation>> = if forward {
             Box::new(node.deltas.iter())
         } else {
@@ -637,7 +634,7 @@ impl TachyonEngine {
                     index,
                     popped_value,
                 }) => {
-                    if let Ok(list_attr) = owner.getattr(path.as_str()) {
+                    if let Ok(list_attr) = owner.call_method1("_resolve_path", (path.as_str(),)) {
                         if forward {
                             list_attr.call_method1("pop", (*index,))?;
                         } else {
@@ -646,7 +643,7 @@ impl TachyonEngine {
                     }
                 }
                 Operation::ListOp(ListOperation::Insert { path, index, value }) => {
-                    if let Ok(list_attr) = owner.getattr(path.as_str()) {
+                    if let Ok(list_attr) = owner.call_method1("_resolve_path", (path.as_str(),)) {
                         if forward {
                             list_attr.call_method1("insert", (*index, value))?;
                         } else {
@@ -660,7 +657,7 @@ impl TachyonEngine {
                     old_value,
                     new_value,
                 }) => {
-                    if let Ok(list_attr) = owner.getattr(path.as_str()) {
+                    if let Ok(list_attr) = owner.call_method1("_resolve_path", (path.as_str(),)) {
                         if forward {
                             list_attr.call_method1("__setitem__", (*index, new_value))?;
                         } else {
@@ -669,19 +666,19 @@ impl TachyonEngine {
                     }
                 }
                 Operation::ListOp(ListOperation::Clear { path, old_values }) => {
-                    if let Ok(list_attr) = owner.getattr(path.as_str()) {
+                    if let Ok(list_attr) = owner.call_method1("_resolve_path", (path.as_str(),)) {
                         if forward {
                             list_attr.call_method1("clear", ())?;
                         } else {
-                            let list = pyo3::types::PyList::new(py, old_values);
+                            let list = pyo3::types::PyList::new(py, old_values)?;
                             list_attr.call_method1("extend", (list,))?;
                         }
                     }
                 }
                 Operation::ListOp(ListOperation::Extend { path, new_values }) => {
-                    if let Ok(list_attr) = owner.getattr(path.as_str()) {
+                    if let Ok(list_attr) = owner.call_method1("_resolve_path", (path.as_str(),)) {
                         if forward {
-                            let list = pyo3::types::PyList::new(py, new_values);
+                            let list = pyo3::types::PyList::new(py, new_values)?;
                             list_attr.call_method1("extend", (list,))?;
                         } else {
                             for value in new_values.iter().rev() {
@@ -691,12 +688,10 @@ impl TachyonEngine {
                     }
                 }
                 Operation::ListOp(ListOperation::Remove { path, value }) => {
-                    if let Ok(list_attr) = owner.getattr(path.as_str()) {
+                    if let Ok(list_attr) = owner.call_method1("_resolve_path", (path.as_str(),)) {
                         if forward {
                             list_attr.call_method1("remove", (value,))?;
                         } else {
-                            // Note: This is a best-effort undo if index isn't known.
-                            // Ideally we log removals as ListPop with index.
                             list_attr.call_method1("append", (value,))?;
                         }
                     }
@@ -706,7 +701,7 @@ impl TachyonEngine {
                     keys,
                     old_values,
                 }) => {
-                    if let Ok(dict_attr) = owner.getattr(path.as_str()) {
+                    if let Ok(dict_attr) = owner.call_method1("_resolve_path", (path.as_str(),)) {
                         if forward {
                             dict_attr.call_method0("clear")?;
                         } else {
@@ -721,7 +716,7 @@ impl TachyonEngine {
                     key,
                     old_value,
                 }) => {
-                    if let Ok(dict_attr) = owner.getattr(path.as_str()) {
+                    if let Ok(dict_attr) = owner.call_method1("_resolve_path", (path.as_str(),)) {
                         if forward {
                             dict_attr.call_method1("pop", (key,))?;
                         } else {
@@ -734,7 +729,7 @@ impl TachyonEngine {
                     key,
                     old_value,
                 }) => {
-                    if let Ok(dict_attr) = owner.getattr(path.as_str()) {
+                    if let Ok(dict_attr) = owner.call_method1("_resolve_path", (path.as_str(),)) {
                         if forward {
                             dict_attr.call_method0("popitem")?;
                         } else {
@@ -743,7 +738,7 @@ impl TachyonEngine {
                     }
                 }
                 Operation::DictOp(DictOperation::SetDefault { path, key, value }) => {
-                    if let Ok(dict_attr) = owner.getattr(path.as_str()) {
+                    if let Ok(dict_attr) = owner.call_method1("_resolve_path", (path.as_str(),)) {
                         if forward {
                             dict_attr.call_method1("setdefault", (key, value))?;
                         } else {
@@ -757,7 +752,7 @@ impl TachyonEngine {
                     old_values,
                     new_values,
                 }) => {
-                    if let Ok(dict_attr) = owner.getattr(path.as_str()) {
+                    if let Ok(dict_attr) = owner.call_method1("_resolve_path", (path.as_str(),)) {
                         for ((key, old_value), new_value) in
                             keys.iter().zip(old_values.iter()).zip(new_values.iter())
                         {
@@ -776,7 +771,7 @@ impl TachyonEngine {
                     key,
                     old_value,
                 }) => {
-                    if let Ok(dict_attr) = owner.getattr(path.as_str()) {
+                    if let Ok(dict_attr) = owner.call_method1("_resolve_path", (path.as_str(),)) {
                         if forward {
                             dict_attr.call_method1("__delitem__", (key,))?;
                         } else {
@@ -790,21 +785,19 @@ impl TachyonEngine {
                     delta_blob,
                 } => {
                     let registry = py.import("janus.registry")?;
-                    let adapter_registry =
-                        registry.getattr("ADAPTER_REGISTRY")?.downcast::<PyDict>()?;
+                    let registry_attr = registry.getattr("ADAPTER_REGISTRY")?;
+                    let adapter_registry = registry_attr.downcast::<pyo3::types::PyDict>()?;
                     for adapter in adapter_registry.values() {
                         let type_name = adapter.get_type().name()?;
-                        if type_name == adapter_name {
+                        let type_name_str = type_name.to_str()?;
+                        if type_name_str == adapter_name {
                             let method = if forward {
                                 "apply_forward"
                             } else {
-                                "apply_inverse"
+                                "apply_backward"
                             };
-                            adapter.call_method1(
-                                method,
-                                (owner.getattr(path.as_str())?, delta_blob),
-                            )?;
-                            break;
+                            let target = owner.call_method1("_resolve_path", (path.as_str(),))?;
+                            adapter.call_method1(method, (target, delta_blob))?;
                         }
                     }
                 }

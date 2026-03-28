@@ -4,12 +4,12 @@ from janus import TimelineBase
 
 
 class Document(TimelineBase):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.text = ""
 
 
-def test_linear_pruning_on_mutation():
+def test_linear_pruning_on_mutation() -> None:
     doc = Document()
 
     # Sequence of states: "" -> "A" -> "AB"
@@ -38,7 +38,7 @@ def test_linear_pruning_on_mutation():
     assert doc.text == ""
 
 
-def test_label_pruning_in_linear_mode():
+def test_label_pruning_in_linear_mode() -> None:
     doc = Document()
 
     doc.text = "State 1"
@@ -59,7 +59,7 @@ def test_label_pruning_in_linear_mode():
     assert len(labels) == 1  # Only "__genesis__"
 
 
-def test_multiple_undo_pruning():
+def test_multiple_undo_pruning() -> None:
     doc = Document()
     doc.text = "1"
     doc.text = "2"
