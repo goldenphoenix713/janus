@@ -4,9 +4,9 @@ This milestone will enable the Tachyon Engine to store and retrieve arbitrary me
 
 ## 🛠 Proposed Changes
 
-### [Rust Engine](file:///Users/eduardo.ruiz/PycharmProjects/Janus/src/engine.rs)
+### [Rust Engine](src/engine.rs)
 
-#### [MODIFY] [engine.rs](file:///Users/eduardo.ruiz/PycharmProjects/Janus/src/engine.rs)
+#### [MODIFY] [engine.rs](src/engine.rs)
 
 - **`StateNode` Struct**: Re-enable and finalize the `metadata: HashMap<String, PyObject>` field.
 - **Metadata Management**:
@@ -14,9 +14,9 @@ This milestone will enable the Tachyon Engine to store and retrieve arbitrary me
   - Implement `get_node_metadata(node_id, key)` for retrieval.
   - Implement `get_all_node_metadata(node_id)` to export all tags for visualization.
 
-### [Janus Core](file:///Users/eduardo.ruiz/PycharmProjects/Janus/janus/base.py)
+### [Janus Core](janus/base.py)
 
-#### [MODIFY] [base.py](file:///Users/eduardo.ruiz/PycharmProjects/Janus/janus/base.py)
+#### [MODIFY] [base.py](janus/base.py)
 
 - **`JanusBase.tag_moment()`**: Introduce a public method to tag the current state:
 
