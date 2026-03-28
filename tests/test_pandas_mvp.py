@@ -126,3 +126,82 @@ def test_pandas_method_chaining():
     # Verify metadata propagation
     assert result._janus_name == "df"
     assert result._janus_engine is not None
+
+
+@pytest.mark.skipif(not PANDAS_INSTALLED, reason="Pandas is not installed")
+def test_loc_cell_mutation_rollback():
+    """Verify that .loc[row, col] mutation is correctly undone."""
+    store = MockPandasStore()
+    store.df = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
+
+    # Verify engine presence
+    assert hasattr(store.df, "_janus_engine"), (
+        "DataFrame missing engine before loc mutation"
+    )
+
+    # Get current timeline length
+    len(store._engine.extract_timeline("main"))
+
+    # Mutate a single cell via .loc
+    store.df.loc[0, "A"] = 100
+    assert store.df.loc[0, "A"] == 100
+
+    # Undo
+    store.undo()
+    assert store.df.loc[0, "A"] == 1
+
+
+@pytest.mark.skipif(not PANDAS_INSTALLED, reason="Pandas is not installed")
+def test_iloc_slice_mutation_rollback():
+    """Verify that .iloc slice mutation is correctly undone."""
+    store = MockPandasStore()
+    store.df = pd.DataFrame({"A": [1, 2, 3]})
+
+    # Mutate a slice via .iloc
+    store.df.iloc[0:2, 0] = [10, 20]
+    assert store.df["A"].tolist() == [10, 20, 3]
+
+    # Undo
+    store.undo()
+    assert store.df["A"].tolist() == [1, 2, 3]
+
+
+@pytest.mark.skipif(not PANDAS_INSTALLED, reason="Pandas is not installed")
+def test_at_scalar_mutation_rollback():
+    """Verify that .at scalar mutation is correctly undone."""
+    store = MockPandasStore()
+    store.df = pd.DataFrame({"A": [1, 2]})
+
+    # Mutate via .at
+    store.df.at[1, "A"] = 99
+    assert store.df.at[1, "A"] == 99
+
+    # Undo
+    store.undo()
+    assert store.df.at[1, "A"] == 2
+
+
+@pytest.mark.skipif(not PANDAS_INSTALLED, reason="Pandas is not installed")
+@pytest.mark.xfail(
+    reason=(
+        "Pandas subclasses often return copies for single-row indexers,"
+        "breaking the view-link."
+    )
+)
+def test_view_propagation_mutation():
+    """Verify that a view (TrackedSeries) updates the parent's Janus timeline."""
+    store = MockPandasStore()
+    store.df = pd.DataFrame({"val": [1, 2, 3]})
+
+    # Get a row-view via .loc
+    row_view = store.df.loc[0]
+    # Because of constructor-sliced, row_view should be a TrackedSeries
+    assert isinstance(row_view, TrackedSeries)
+
+    # Mutate the view directly
+    row_view["val"] = 555
+    assert store.df.at[0, "val"] == 555
+
+    # Undo should restore the parent DataFrame's state
+    store.undo()
+    assert store.df.at[0, "val"] == 1

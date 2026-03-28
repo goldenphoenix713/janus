@@ -7,23 +7,73 @@ from ..registry import JanusAdapter, register_adapter
 try:
     import pandas as pd
 
+    # ------- Helper Functions ------- #
+
     def _log_pre_mutation(obj: TrackedDataFrame | TrackedSeries, name: str):
-        if hasattr(obj, "_janus_engine"):
-            snapshot = obj.copy()
-            snapshot._janus_engine = None
-            object.__setattr__(obj, "_janus_snapshot", snapshot)
+        root = getattr(obj, "_janus_parent", obj)
+        if hasattr(root, "_janus_engine"):
+            # Avoid nested logging: if a snapshot already exists, we are already
+            # being tracked by a higher-level operation (like an Indexer).
+            if hasattr(root, "_janus_snapshot"):
+                return
+
+            if isinstance(root, pd.DataFrame):
+                snapshot = pd.DataFrame(
+                    root.values.copy(),
+                    index=root.index.copy(),
+                    columns=root.columns.copy(),
+                )
+            elif isinstance(root, pd.Series):
+                snapshot = pd.Series(
+                    root.values.copy(), index=root.index.copy(), name=root.name
+                )
+            else:
+                raise TypeError(f"Unsupported type for snapshot: {type(root)}")
+
+            # Mark who started this snapshot to ensure they are the one to close it
+            object.__setattr__(root, "_janus_snapshot", snapshot)
+            object.__setattr__(root, "_janus_initiator", id(obj))
 
     def _log_post_mutation(obj: TrackedDataFrame | TrackedSeries, name: str):
-        if hasattr(obj, "_janus_engine"):
-            obj._janus_engine.log_plugin_op(
-                obj._janus_name,
-                obj._pandas_adapter,
-                (obj._janus_snapshot, obj.copy()),
+        root = getattr(obj, "_janus_parent", obj)
+        if hasattr(root, "_janus_engine") and hasattr(root, "_janus_snapshot"):
+            # Only the initiator who created the snapshot should finalize the log
+            if getattr(root, "_janus_initiator", None) != id(obj):
+                return
+
+            if isinstance(root, pd.DataFrame):
+                current = pd.DataFrame(
+                    root.values.copy(),
+                    index=root.index.copy(),
+                    columns=root.columns.copy(),
+                )
+            elif isinstance(root, pd.Series):
+                current = pd.Series(
+                    root.values.copy(), index=root.index.copy(), name=root.name
+                )
+            else:
+                raise TypeError(f"Unsupported type for snapshot: {type(root)}")
+
+            root._janus_engine.log_plugin_op(
+                root._janus_name,
+                root._pandas_adapter,
+                (root._janus_snapshot, current),
             )
+            # Cleanup
+            delattr(root, "_janus_snapshot")
+            delattr(root, "_janus_initiator")
+
+    # ------- Tracked Data Structures ------- #
 
     class TrackedSeries(pd.Series):
-        _metadata = ["_janus_engine", "_janus_name", "_restoring"]
+        _metadata = ["_janus_engine", "_janus_name", "_janus_parent", "_restoring"]
         _pandas_adapter = "TrackedSeriesAdapter"
+
+        def __init__(self, data=None, *args, **kwargs):
+            # Ensure we don't force a copy if data is a view
+            if "copy" not in kwargs:
+                kwargs["copy"] = False
+            super().__init__(data=data, *args, **kwargs)
 
         @property
         def _constructor(self):
@@ -32,6 +82,22 @@ try:
         @property
         def _constructor_expandim(self):
             return TrackedDataFrame
+
+        @property
+        def loc(self):
+            return BaseTrackedIndexer(self, "loc")
+
+        @property
+        def iloc(self):
+            return BaseTrackedIndexer(self, "iloc")
+
+        @property
+        def at(self):
+            return BaseTrackedIndexer(self, "at")
+
+        @property
+        def iat(self):
+            return BaseTrackedIndexer(self, "iat")
 
         def __setattr__(self, key: str, value: Any):
             if key in [*self._metadata, "_restoring"]:
@@ -56,8 +122,14 @@ try:
             _log_post_mutation(self, key)
 
     class TrackedDataFrame(pd.DataFrame):
-        _metadata = ["_janus_engine", "_janus_name", "_restoring"]
+        _metadata = ["_janus_engine", "_janus_name", "_janus_parent", "_restoring"]
         _pandas_adapter = "TrackedDataFrameAdapter"
+
+        def __init__(self, data=None, *args, **kwargs):
+            # Ensure we don't force a copy if data is a view
+            if "copy" not in kwargs:
+                kwargs["copy"] = False
+            super().__init__(data=data, *args, **kwargs)
 
         @property
         def _constructor(self):
@@ -66,6 +138,22 @@ try:
         @property
         def _constructor_sliced(self):
             return TrackedSeries
+
+        @property
+        def loc(self):
+            return BaseTrackedIndexer(self, "loc")
+
+        @property
+        def iloc(self):
+            return BaseTrackedIndexer(self, "iloc")
+
+        @property
+        def at(self):
+            return BaseTrackedIndexer(self, "at")
+
+        @property
+        def iat(self):
+            return BaseTrackedIndexer(self, "iat")
 
         def __setattr__(self, key: str, value: Any):
             if key in [*self._metadata, "_restoring"]:
@@ -89,6 +177,68 @@ try:
             super().__setitem__(key, value)
             _log_post_mutation(self, key)
 
+    # ------- Indexer Wrappers ------- #
+
+    class BaseTrackedIndexer:
+        def __init__(self, parent_df, indexer_name):
+            self._parent = parent_df
+            # Get the real pandas indexer (e.g., df.loc) from the base class
+            self._real_indexer = getattr(
+                super(self._parent.__class__, self._parent), indexer_name
+            )
+
+        def __getattr__(self, name):
+            # Proxy missing attributes (like _setitem_with_indexer) to the real indexer
+            return getattr(self._real_indexer, name)
+
+        def __getitem__(self, key):
+            # Transparency for reads
+            result = self._real_indexer[key]
+
+            # Use class-swapping to "Janus-ify" the result without forcing a copy.
+            # This is critical for preserving view-links in pandas subclasses.
+            if isinstance(result, pd.Series) and not isinstance(result, TrackedSeries):
+                result.__class__ = TrackedSeries
+                object.__setattr__(
+                    result,
+                    "_janus_engine",
+                    getattr(self._parent, "_janus_engine", None),
+                )
+                object.__setattr__(
+                    result, "_janus_name", getattr(self._parent, "_janus_name", "view")
+                )
+                # Link to the root parent for delegated logging
+                object.__setattr__(result, "_janus_parent", self._parent)
+                object.__setattr__(result, "_pandas_adapter", "TrackedSeriesAdapter")
+            elif isinstance(result, pd.DataFrame) and not isinstance(
+                result, TrackedDataFrame
+            ):
+                result.__class__ = TrackedDataFrame
+                object.__setattr__(
+                    result,
+                    "_janus_engine",
+                    getattr(self._parent, "_janus_engine", None),
+                )
+                object.__setattr__(
+                    result, "_janus_name", getattr(self._parent, "_janus_name", "view")
+                )
+                object.__setattr__(result, "_janus_parent", self._parent)
+                object.__setattr__(result, "_pandas_adapter", "TrackedDataFrameAdapter")
+
+            return result
+
+        def __setitem__(self, key, value):
+
+            if getattr(self._parent, "_restoring", False):
+                return self._real_indexer.__setitem__(key, value)
+
+            # Intercept for writes
+            _log_pre_mutation(self._parent, "indexer")
+            self._real_indexer[key] = value
+            _log_post_mutation(self._parent, "indexer")
+
+    # ------- Adapters ------- #
+
     @register_adapter(TrackedDataFrame)
     class TrackedDataFrameAdapter(JanusAdapter):
         def get_delta(self, old_snapshot, new_state):
@@ -97,28 +247,29 @@ try:
 
         def apply_inverse(self, target, delta_blob):
             old_df, _ = delta_blob
-            target._restoring = True
-            # In-place update of the underlying DataFrame
+            object.__setattr__(target, "_restoring", True)
             try:
-                target._mgr = old_df._mgr
+                # Use public iloc assignment which is more robust than _mgr swapping
+                # BaseTrackedIndexer will see _restoring=True and bypass logging.
+                target.iloc[:, :] = old_df.values
                 target.index = old_df.index
                 target.columns = old_df.columns
             except Exception as e:
                 raise RuntimeError(f"Failed to restore DataFrame: {e}")
             finally:
-                target._restoring = False
+                object.__setattr__(target, "_restoring", False)
 
         def apply_forward(self, target, delta_blob):
             _, new_df = delta_blob
-            target._restoring = True
+            object.__setattr__(target, "_restoring", True)
             try:
-                target._mgr = new_df._mgr
+                target.iloc[:, :] = new_df.values
                 target.index = new_df.index
                 target.columns = new_df.columns
             except Exception as e:
                 raise RuntimeError(f"Failed to restore DataFrame: {e}")
             finally:
-                target._restoring = False
+                object.__setattr__(target, "_restoring", False)
 
         def get_snapshot(self, value):
             return value.copy()
@@ -131,28 +282,28 @@ try:
 
         def apply_inverse(self, target, delta_blob):
             old_series, _ = delta_blob
-            target._restoring = True
-            # In-place update of the underlying Series
+            object.__setattr__(target, "_restoring", True)
             try:
-                target._mgr = old_series._mgr
+                # Use public iloc assignment for robust restoration
+                target.iloc[:] = old_series.values
                 target.index = old_series.index
                 target.name = old_series.name
             except Exception as e:
                 raise RuntimeError(f"Failed to restore Series: {e}")
             finally:
-                target._restoring = False
+                object.__setattr__(target, "_restoring", False)
 
         def apply_forward(self, target, delta_blob):
             _, new_series = delta_blob
-            target._restoring = True
+            object.__setattr__(target, "_restoring", True)
             try:
-                target._mgr = new_series._mgr
+                target.iloc[:] = new_series.values
                 target.index = new_series.index
                 target.name = new_series.name
             except Exception as e:
                 raise RuntimeError(f"Failed to restore Series: {e}")
             finally:
-                target._restoring = False
+                object.__setattr__(target, "_restoring", False)
 
         def get_snapshot(self, value):
             return value.copy()
