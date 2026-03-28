@@ -231,7 +231,8 @@ janus/
 │   ├── tachyon_rs.abi3.so           # Compiled Rust shared library (platform-specific)
 │   ├── py.typed                     # PEP 561 marker
 │   └── plugins/
-│       └── pandas.py                # TrackedDataFrame, TrackedSeries, indexer wrappers, adapters
+│       ├── pandas.py                # TrackedDataFrame, TrackedSeries, indexer wrappers, adapters
+│       └── numpy.py                 # TrackedNumpyArray proxy and adapter
 │
 ├── tests/                           # Test suite (pytest)
 │   ├── test_basic_revert.py         # Label creation + jump_to round-trip
@@ -462,16 +463,11 @@ from janus import MultiverseBase, TimelineBase
 class MyTimelineObj(TimelineBase):
     def __init__(self) -> None:
         super().__init__()
-        self.value = 0
-
-class MyMultiverseObj(MultiverseBase):
-    def __init__(self) -> None:
-        super().__init__()
         self.items: list[int] = []    # Auto-wrapped to TrackedList
         self.config: dict[str, str] = {}  # Auto-wrapped to TrackedDict
 ```
 
-### 9.2 Methods Provided by Base Classes
+#### 9.2 Complete API Reference
 
 | Method | Availability | Description |
 | :--- | :--- | :--- |
@@ -527,8 +523,8 @@ Verified benchmarks show **~27,000× speedup** over `copy.deepcopy()` for object
 | Phase | Status | Key Gaps |
 | :--- | :--- | :--- |
 | **P1 — Linear Foundation** | **100%** | — (complete: undo/redo, overwrite-future, linear guards) |
-| **P2 — Multiversal Branching** | **~95%** | No merge logic |
-| **P3 — Plugins & Containers** | **~85%** | `TrackedList`/`TrackedDict` fully implemented; pandas adapter complete; NumPy adapter not started |
+| **P2 — Multiversal Branching** | **100%** | — (complete: DAG, branching, deletion, listing, moments) |
+| **P3 — Plugins & Containers** | **~95%** | `TrackedList`/`TrackedDict` fully implemented; pandas & numpy adapters complete |
 | **P4 — Timeline & Flattening** | ~40% | No history squash, no filtering, no timeline diff |
 | **P5 — Tombstone & Memory** | 0% | No weak refs, no pruning, no memory benchmarks |
 
@@ -538,7 +534,8 @@ Verified benchmarks show **~27,000× speedup** over `copy.deepcopy()` for object
 - **`apply_inverse` → `apply_backward`**: Adapter protocol method renamed for clarity. `apply_forward` and `get_snapshot` added for bidirectional support.
 - **Shadow Snapshots**: `JanusBase.__setattr__` now stashes `_shadow_` attributes to correctly compute deltas for in-place mutated plugin objects.
 - **Container Hardening**: `TrackedList` and `TrackedDict` now subclass native Python `list`/`dict` (full `isinstance` compat) and delegate logging to Rust `Core` classes.
-- **Pandas Integration**: `TrackedDataFrame`, `TrackedSeries`, and indexer wrappers (`.loc`, `.iloc`, `.at`, `.iat`) are fully operational with undo/redo and branching.
+- **Pandas & NumPy Integration**: `TrackedDataFrame`, `TrackedSeries`, and `TrackedNumpyArray` are fully operational with undo/redo and branching.
+- **Branch Management**: Methods for listing (`list_branches`) and deleting (`delete_branch`) branches are complete.
 - **Strict Type Checking**: `mypy` runs in `strict` mode; all source and test files have comprehensive type annotations.
 
 ---

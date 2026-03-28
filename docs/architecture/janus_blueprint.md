@@ -36,7 +36,8 @@ janus/
 │   ├── registry.py           # Plugin AdapterRegistry for 3rd-party types
 │   ├── tachyon_rs.pyi        # Type stubs for the Rust extension
 │   └── plugins/
-│       └── pandas.py         # TrackedDataFrame, TrackedSeries, indexer wrappers
+│       ├── pandas.py         # TrackedDataFrame, TrackedSeries, indexer wrappers
+│       └── numpy.py          # TrackedNumpyArray proxy and adapter
 └── tests/
     ├── __init__.py
     ├── test_multiverse.py    # E2E branching and switching tests
@@ -142,27 +143,18 @@ impl TachyonEngine {
         }
     }
 
-    pub fn log_op(&mut self, op: Operation) {
-        // Creates a new node and edge.
-        // If mode == "linear", it may prune future history if we were in an "undone" state.
-        let new_node = StateNode {
-            id: self.next_node_id,
-            parents: vec![self.current_node],
-            deltas: vec![op],
-        };
-        self.nodes.insert(self.next_node_id, new_node);
-        self.current_node = self.next_node_id;
-        self.next_node_id += 1;
-    }
+    pub fn log_update_attr(&mut self, name: String, old_value: PyObject, new_value: PyObject) { ... }
+    pub fn log_plugin_op(&mut self, path: String, adapter_name: String, delta_blob: PyObject) { ... }
+    pub fn log_list_insert(&mut self, path: String, index: usize, value: PyObject) { ... }
+    pub fn log_dict_update(&mut self, path: String, keys: Vec<String>, old: Vec<PyObject>, new: Vec<PyObject>) { ... }
 
-    pub fn extract_timeline(&self, py: Python, label: String) -> PyResult<Vec<PyObject>> {
-        // Walks backwards from the target leaf to the root (parent_id == None),
-        // reverses the list, and returns a flat timeline of events.
-        // (Implementation stubbed for blueprint)
-        Ok(Vec::new())
-    }
+    pub fn extract_timeline(&self, py: Python, label: Option<String>) -> PyResult<Vec<PyObject>> { ... }
 
-    // ... create_branch, switch_branch, and apply_inverse omitted for brevity ...
+    pub fn undo(&mut self, py: Python) -> PyResult<()> { ... }
+    pub fn redo(&mut self, py: Python) -> PyResult<()> { ... }
+    pub fn move_to(&mut self, py: Python, label: String) -> PyResult<()> { ... }
+    pub fn create_branch(&mut self, label: String) { ... }
+    pub fn delete_branch(&mut self, label: String) -> PyResult<()> { ... }
 }
 ```
 
@@ -237,10 +229,13 @@ class JanusBase:
         self._engine.redo()
 
     def create_moment_label(self, label: str) -> None:
-        self._engine.create_moment(label)
+        self._engine.label_node(label)
 
     def jump_to(self, label: str) -> None:
         self._engine.move_to(label)
+
+    def get_labeled_moments(self) -> list[str]:
+        return self._engine.list_nodes()
 
 
 class TimelineBase(JanusBase):
@@ -252,13 +247,23 @@ class MultiverseBase(JanusBase):
     def __init__(self) -> None:
         super().__init__(mode="multiversal")
 
+    @property
+    def current_branch(self) -> str:
+        return self._engine.current_branch
+
     def branch(self, label: str) -> None:
         self._engine.create_branch(label)
 
     def switch_branch(self, label: str) -> None:
-        self._engine.switch_branch(label)
+        self.jump_to(label)
 
-    def extract_timeline(self, label: str) -> list:
+    def list_branches(self) -> list[str]:
+        return self._engine.list_branches()
+
+    def delete_branch(self, label: str) -> None:
+        self._engine.delete_branch(label)
+
+    def extract_timeline(self, label: str) -> list[dict[str, Any]]:
         return self._engine.extract_timeline(label)
 ```
 

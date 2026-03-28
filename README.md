@@ -57,9 +57,9 @@ print(sim.points)  # [1, 2, 3]
 
 ## 🏗️ Architectural Pillars
 
-1. **Extensible Plugin Registry**: Register a `JanusAdapter` to track `pandas.DataFrames`, `torch.Tensors`, or any custom object without slowing down the core engine.
+1. **Extensible Plugin Registry**: Register a `JanusAdapter` to track `pandas.DataFrames`, `numpy.ndarrays`, `torch.Tensors`, or any custom object without slowing down the core engine.
 2. **Timeline Extraction**: Flatten complex multiversal paths into linear audit sequences for visualization and debugging.
-3. **Pandas Integration**: Built-in `TrackedDataFrame` and `TrackedSeries` with full indexer support (`.loc`, `.iloc`, `.at`, `.iat`).
+3. **Third-Party Integration**: Built-in `TrackedDataFrame` and `TrackedNumpyArray` support with full indexer and view-tracking.
 
 ## 🚀 Use Cases
 
