@@ -1,7 +1,11 @@
 use pyo3::prelude::*;
 
 mod containers;
-mod engine;
+pub mod engine;
+pub mod graph;
+pub mod models;
+pub mod reconcile;
+pub mod serde_py;
 
 #[pymodule]
 fn tachyon_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {

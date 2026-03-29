@@ -79,6 +79,7 @@ class JanusBase:
     def __init__(self, mode: str) -> None:
         self._engine = TachyonEngine(self, mode)
         self._restoring = False
+        self._adapters = {type(a).__name__: a for a in ADAPTER_REGISTRY.values()}
 
     def _resolve_path(self, path: str) -> Any:
         """Resolve a nested path like 'data[0].key' and return the object."""
