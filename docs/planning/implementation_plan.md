@@ -539,7 +539,7 @@ class BaseTrackedIndexer:
 
     def __setitem__(self, key, value):
         # Intercept for writes
-        from .pandas import _log_pre_mutation, _log_post_mutation
+        from janus.pandas import _log_pre_mutation, _log_post_mutation
         _log_pre_mutation(self._parent, "indexer")
         self._real_indexer[key] = value
         _log_post_mutation(self._parent, "indexer")

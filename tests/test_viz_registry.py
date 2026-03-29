@@ -2,7 +2,8 @@ from typing import Any
 
 import pytest
 
-from janus import MultiverseBase, options
+from janus import options
+from janus.base import JanusBase, MultiverseBase
 from janus.viz import register_backend
 
 
@@ -13,7 +14,7 @@ class Simulation(MultiverseBase):
 
 
 class MockBackend:
-    def plot(self, obj: "MultiverseBase", **kwargs: Any) -> str:
+    def plot(self, obj: JanusBase, **kwargs: Any) -> str:
         return f"Mock plot for {type(obj).__name__} with {kwargs}"
 
 

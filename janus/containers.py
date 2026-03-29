@@ -2,17 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .tachyon_rs import TachyonEngine, TrackedDictCore, TrackedListCore
-
-try:
-    import numpy as np
-
-    NUMPY_AVAILABLE = True
-except ImportError:
-    NUMPY_AVAILABLE = False
-
-if NUMPY_AVAILABLE:
-    from .plugins.numpy import TrackedNumpyArray
+from janus.registry import CONTAINER_REGISTRY, wrap_value
+from janus.tachyon_rs import TachyonEngine, TrackedDictCore, TrackedListCore
 
 
 class TrackedList(list):  # type: ignore[type-arg]
@@ -235,49 +226,6 @@ class TrackedDict(dict):  # type: ignore[type-arg]
             self._core.log_clear(keys, values)
 
 
-def wrap_value(value: Any, engine: TachyonEngine, path: str, owner: Any = None) -> Any:
-    """
-    Recursively wrap standard Python containers in Janus tracking proxies.
-
-    This function detects `list` and `dict` objects and returns `TrackedList`
-    and `TrackedDict` versions of them, linked to the provided engine.
-
-    Args:
-        value: The value to wrap.
-        engine: The Janus engine to use for tracking.
-        path: The path/name of the object in the JanusBase hierarchy.
-        owner: The JanusBase object that owns this value.
-
-    Returns:
-        The wrapped value (or the original value if not a supported container).
-    """
-    if isinstance(value, (TrackedList, TrackedDict)):
-        return value
-
-    if (
-        NUMPY_AVAILABLE
-        and isinstance(value, np.ndarray)
-        and not isinstance(value, TrackedNumpyArray)
-    ):
-        wrapped = TrackedNumpyArray(value)
-        wrapped._janus_engine = engine
-        wrapped._janus_name = path
-        return wrapped
-
-    if isinstance(value, list):
-        wrapped_list = TrackedList([], engine, path, owner=owner)
-        wrapped_list._silent = True
-        for v in value:
-            wrapped_list.append(v)
-        wrapped_list._silent = False
-        return wrapped_list
-
-    if isinstance(value, dict):
-        wrapped_dict = TrackedDict({}, engine, path)
-        wrapped_dict._silent = True
-        for k, v in value.items():
-            wrapped_dict[k] = v
-        wrapped_dict._silent = False
-        return wrapped_dict
-
-    return value
+# Register containers to avoid circular imports in registry.py
+CONTAINER_REGISTRY["list"] = TrackedList
+CONTAINER_REGISTRY["dict"] = TrackedDict

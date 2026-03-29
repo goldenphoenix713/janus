@@ -8,9 +8,11 @@ Janus provides a Git-like interface for Python objects, allowing you to:
 4. Visualize state transition graphs (DAGs).
 """
 
-from .base import JanusBase, MultiverseBase, TimelineBase
-from .options import options
-from .registry import JanusAdapter, register_adapter
+from janus import containers
+from janus.base import JanusBase, MultiverseBase, TimelineBase
+from janus.options import options
+from janus.plugins import numpy, pandas
+from janus.registry import JanusAdapter, register_adapter
 
 __all__ = [
     "register_adapter",
@@ -19,4 +21,7 @@ __all__ = [
     "MultiverseBase",
     "TimelineBase",
     "options",
+    "containers",
+    "pandas",
+    "numpy",
 ]

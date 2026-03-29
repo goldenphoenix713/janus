@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
-    from .base import MultiverseBase
+    from janus.base import JanusBase
 
 
 class VizBackend(Protocol):
     """Protocol for Janus visualization backends."""
 
-    def plot(self, obj: MultiverseBase, **kwargs: Any) -> Any:
+    def plot(self, obj: JanusBase, **kwargs: Any) -> Any:
         """Render the multiverse DAG."""
         ...
 
@@ -17,17 +17,14 @@ class VizBackend(Protocol):
 class MermaidBackend:
     """
     Renders the multiverse DAG as a Mermaid diagram string.
-
-    This backend produces a 'graph LR' string suitable for rendering in
-    Markdown viewers that support Mermaid.
     """
 
-    def plot(self, obj: MultiverseBase, **kwargs: Any) -> str:
+    def plot(self, obj: JanusBase, **kwargs: Any) -> str:
         """
-        Generate a Mermaid diagram for the given Multiverse object.
+        Generate a Mermaid diagram for the given Janus object.
 
         Args:
-            obj: The Multiverse instance to visualize.
+            obj: The JanusBase instance to visualize.
             **kwargs: Additional plotting options.
 
         Returns:
@@ -75,7 +72,7 @@ def get_backend(name: str) -> VizBackend:
         # Simple lazy loading for matplotlib if it's added later
         if name == "matplotlib":
             try:
-                from .viz_mpl import MatplotlibBackend
+                from janus.viz_mpl import MatplotlibBackend
 
                 VIZ_BACKENDS["matplotlib"] = MatplotlibBackend()
                 return VIZ_BACKENDS["matplotlib"]

@@ -202,9 +202,9 @@ def register_adapter(target_class):
 ### `janus/base.py`
 
 ```python
-from .tachyon_rs import TachyonEngine
-from .containers import wrap_value
-from .registry import ADAPTER_REGISTRY
+from janus.tachyon_rs import TachyonEngine
+from janus.containers import wrap_value
+from janus.registry import ADAPTER_REGISTRY
 
 
 class JanusBase:

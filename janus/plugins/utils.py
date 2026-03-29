@@ -3,25 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import janus.registry as registry
-
-
-def get_engine(obj: Any) -> Any | None:
-    """
-    Find the Janus engine by traversing the view/proxy hierarchy.
-
-    Args:
-        obj: The tracked object (or a view of one).
-
-    Returns:
-        The TachyonEngine if found, otherwise None.
-    """
-    curr = obj
-    while curr is not None:
-        engine = getattr(curr, "_janus_engine", None)
-        if engine is not None:
-            return engine
-        curr = getattr(curr, "_janus_parent", None)
-    return None
+from janus.utils import get_engine
 
 
 def log_pre_mutation(obj: Any) -> None:
@@ -42,7 +24,11 @@ def log_pre_mutation(obj: Any) -> None:
         return
 
     parent = getattr(obj, "_janus_parent", None)
-    root = parent if parent is not None else obj
+    if parent is not None and parent.__class__ in registry.ADAPTER_REGISTRY:
+        root = parent
+    else:
+        root = obj
+
     if hasattr(root, "_janus_snapshot"):
         return
 
@@ -74,7 +60,11 @@ def log_post_mutation(obj: Any, adapter_name: str | None = None) -> None:
         return
 
     parent = getattr(obj, "_janus_parent", None)
-    root = parent if parent is not None else obj
+    if parent is not None and parent.__class__ in registry.ADAPTER_REGISTRY:
+        root = parent
+    else:
+        root = obj
+
     if not hasattr(root, "_janus_snapshot"):
         return
 
@@ -91,8 +81,9 @@ def log_post_mutation(obj: Any, adapter_name: str | None = None) -> None:
             # Fallback to the object's specified adapter name or class name
             adapter_name = getattr(root, "_janus_adapter_name", type(adapter).__name__)
 
+        root_name = getattr(root, "_janus_name", "unknown")
         engine.log_plugin_op(
-            getattr(root, "_janus_name", "unknown"),
+            root_name,
             adapter_name,
             delta,
         )

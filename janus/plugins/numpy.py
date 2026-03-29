@@ -2,16 +2,33 @@ from __future__ import annotations
 
 from typing import Any
 
-from janus.registry import register_adapter
+from janus.plugins.utils import log_post_mutation, log_pre_mutation
+from janus.registry import register_adapter, register_wrapper
 
 try:
     import numpy as np
 
     NUMPY_AVAILABLE = True
+
+    @register_wrapper(np.ndarray)
+    def wrap_numpy(value: Any, engine: Any, path: str, owner: Any = None) -> Any:
+        if not isinstance(value, TrackedNumpyArray):
+            wrapped = TrackedNumpyArray(value)
+        else:
+            wrapped = value
+
+        # Ensure engine is set on the root of the array chain
+        root = getattr(wrapped, "_janus_parent", None) or wrapped
+        root._janus_engine = engine
+        root._janus_name = path
+
+        # Also ensure the current view has the engine reference
+        wrapped._janus_engine = engine
+        wrapped._janus_name = path
+        return wrapped
 except ImportError:
     NUMPY_AVAILABLE = False
 
-from .utils import log_post_mutation, log_pre_mutation
 
 if NUMPY_AVAILABLE:
 

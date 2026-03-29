@@ -2,12 +2,116 @@ from __future__ import annotations
 
 from typing import Any
 
-from janus.registry import JanusAdapter, register_adapter
-
-from .utils import log_post_mutation, log_pre_mutation
+from janus.plugins.utils import log_post_mutation, log_pre_mutation
+from janus.registry import register_adapter, register_wrapper, wrap_value
 
 try:
     import pandas as pd
+
+    PANDAS_INSTALLED = True
+
+except ImportError:
+    PANDAS_INSTALLED = False
+
+if PANDAS_INSTALLED:
+    # ------- Tracked Indexers ------- #
+
+    class BaseTrackedIndexer:
+        """Base class for Janus-aware pandas indexers."""
+
+        def __init__(self, name: str, parent: Any) -> None:
+            self._name = name
+            self._parent = parent
+            # Get the original indexer from the base pandas class
+            # (Series or DataFrame)
+            base_cls = parent.__class__.__bases__[0]
+            self._indexer = getattr(base_cls, name).fget(parent)
+
+        def __getattr__(self, name: str) -> Any:
+            """Delegate any unknown attributes to the underlying pandas indexer."""
+            return getattr(self._indexer, name)
+
+        def __getitem__(self, key: Any) -> Any:
+            result = self._indexer[key]
+
+            if isinstance(result, pd.DataFrame):
+                return wrap_value(
+                    result,
+                    self._parent._janus_engine,
+                    self._parent._janus_name,
+                    owner=self._parent,
+                )
+            if isinstance(result, pd.Series):
+                return wrap_value(
+                    result,
+                    self._parent._janus_engine,
+                    self._parent._janus_name,
+                    owner=self._parent,
+                )
+            return result
+
+        def __setitem__(self, key: Any, value: Any) -> None:
+            if getattr(self._parent, "_restoring", False) or (
+                hasattr(self._parent, "_janus_engine")
+                and self._parent._janus_engine is not None
+                and getattr(self._parent._janus_engine.owner, "_restoring", False)
+            ):
+                self._indexer[key] = value
+                return
+
+            log_pre_mutation(self._parent)
+            try:
+                self._indexer[key] = value
+            finally:
+                log_post_mutation(self._parent)
+
+    class TrackedLocIndexer(BaseTrackedIndexer):
+        """Janus-aware .loc indexer."""
+
+        def __init__(self, parent: Any) -> None:
+            super().__init__("loc", parent)
+
+    class TrackedIlocIndexer(BaseTrackedIndexer):
+        """Janus-aware .iloc indexer."""
+
+        def __init__(self, parent: Any) -> None:
+            super().__init__("iloc", parent)
+
+    class TrackedAtIndexer(BaseTrackedIndexer):
+        """Janus-aware .at indexer."""
+
+        def __init__(self, parent: Any) -> None:
+            super().__init__("at", parent)
+
+    class TrackedIatIndexer(BaseTrackedIndexer):
+        """Janus-aware .iat indexer."""
+
+        def __init__(self, parent: Any) -> None:
+            super().__init__("iat", parent)
+
+    @register_wrapper(pd.DataFrame)
+    def wrap_dataframe(value: Any, engine: Any, path: str, owner: Any = None) -> Any:
+        if not isinstance(value, TrackedDataFrame):
+            value.__class__ = TrackedDataFrame
+            if not hasattr(value, "_restoring"):
+                object.__setattr__(value, "_restoring", False)
+        value._janus_engine = engine
+        value._janus_name = path
+        if owner is not None:
+            value._janus_parent = owner
+        return value
+
+    @register_wrapper(pd.Series)
+    def wrap_series(value: Any, engine: Any, path: str, owner: Any = None) -> Any:
+        if not isinstance(value, TrackedSeries):
+            value.__class__ = TrackedSeries
+            if not hasattr(value, "_restoring"):
+                object.__setattr__(value, "_restoring", False)
+        value._janus_engine = engine
+        value._janus_name = path
+        if owner is not None:
+            value._janus_parent = owner
+        return value
 
     # ------- Tracked Data Structures ------- #
 
@@ -23,378 +127,224 @@ try:
         _metadata = [
             "_janus_engine",
             "_janus_name",
-            "_janus_parent",
             "_restoring",
+            "_janus_snapshot",
+            "_janus_initiator",
             "_janus_adapter_name",
+            "_janus_parent",
         ]
-        _janus_adapter_name = "TrackedSeriesAdapter"
+        _janus_adapter_name: str = "PandasAdapter"
 
-        def __init__(self, data: Any = None, *args: Any, **kwargs: Any) -> None:
-            # Ensure we don't force a copy if data is a view
-            if "copy" not in kwargs:
-                kwargs["copy"] = False
-            super().__init__(data=data, *args, **kwargs)
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            if not hasattr(self, "_restoring"):
+                object.__setattr__(self, "_restoring", False)
+
+        def __finalize__(
+            self, other: Any, method: str | None = None, **kwargs: Any
+        ) -> Any:
+            result = super().__finalize__(other, method=method, **kwargs)
+            if not hasattr(result, "_restoring"):
+                object.__setattr__(result, "_restoring", False)
+            return result
 
         @property
-        def _constructor(self) -> type[TrackedSeries]:
+        def _constructor(self) -> type:
             return TrackedSeries
 
         @property
-        def _constructor_expandim(self) -> type[TrackedDataFrame]:
+        def _constructor_expanddim(self) -> type:
             return TrackedDataFrame
 
         @property
-        def loc(self) -> BaseTrackedIndexer:
-            return BaseTrackedIndexer(self, "loc")
+        def _is_restoring(self) -> bool:
+            return bool(
+                getattr(self, "_restoring", False)
+                or (
+                    hasattr(self, "_janus_engine")
+                    and self._janus_engine is not None
+                    and getattr(self._janus_engine.owner, "_restoring", False)
+                )
+            )
 
-        @property
-        def iloc(self) -> BaseTrackedIndexer:
-            return BaseTrackedIndexer(self, "iloc")
+        def __setitem__(self, key: Any, value: Any) -> None:
+            if self._is_restoring:
+                super().__setitem__(key, value)
+                return
 
-        @property
-        def at(self) -> BaseTrackedIndexer:
-            return BaseTrackedIndexer(self, "at")
-
-        @property
-        def iat(self) -> BaseTrackedIndexer:
-            return BaseTrackedIndexer(self, "iat")
+            log_pre_mutation(self)
+            super().__setitem__(key, value)
+            log_post_mutation(self)
 
         def __setattr__(self, key: str, value: Any) -> None:
             if key in [*self._metadata, "_restoring"]:
                 super().__setattr__(key, value)
                 return
 
-            if getattr(self, "_restoring", False) or (
-                hasattr(self, "_janus_engine")
-                and getattr(self._janus_engine.owner, "_restoring", False)
-            ):
+            if self._is_restoring:
                 super().__setattr__(key, value)
                 return
 
             log_pre_mutation(self)
             super().__setattr__(key, value)
-            self._sync_to_parent()
             log_post_mutation(self)
 
-        def __setitem__(self, key: Any, value: Any) -> None:
-            if key in [*self._metadata, "_restoring"]:
-                super().__setitem__(key, value)
-                return
+        @property
+        def loc(self) -> Any:
+            return TrackedLocIndexer(self)
 
-            if getattr(self, "_restoring", False) or (
-                hasattr(self, "_janus_engine")
-                and getattr(self._janus_engine.owner, "_restoring", False)
-            ):
-                super().__setitem__(key, value)
-                return
+        @property
+        def iloc(self) -> Any:
+            return TrackedIlocIndexer(self)
 
-            log_pre_mutation(self)
-            super().__setitem__(key, value)
-            self._sync_to_parent()
-            log_post_mutation(self)
+        @property
+        def at(self) -> Any:
+            return TrackedAtIndexer(self)
 
-        def _sync_to_parent(self) -> None:
-            parent = getattr(self, "_janus_parent", None)
-            key = getattr(self, "_janus_index_key", None)
-            indexer_name = getattr(self, "_janus_indexer", None)
-
-            if parent is not None and key is not None and indexer_name is not None:
-                # Avoid recursive logging by setting _restoring on parent
-                object.__setattr__(parent, "_restoring", True)
-                try:
-                    indexer = getattr(parent, indexer_name)
-                    indexer[key] = self
-                finally:
-                    object.__setattr__(parent, "_restoring", False)
+        @property
+        def iat(self) -> Any:
+            return TrackedIatIndexer(self)
 
     class TrackedDataFrame(pd.DataFrame):  # type: ignore[misc]
         """
         A `pd.DataFrame` subclass that automatically logs mutations to Janus.
 
-        TrackedDataFrame intercepts attribute and item assignments to ensure
-        that changes are recorded in the Janus engine. It also provides wrapped
-        indexers (`loc`, `iloc`, `at`, `iat`) to track cell-level and slice-level
-        mutations.
+        TrackedDataFrame intercepts attribute and item assignments to ensure that
+        changes are recorded in the Janus engine. It also provides wrapped
+        indexers (`loc`, `iloc`, `at`, `iat`) to track cell-level mutations.
         """
 
         _metadata = [
             "_janus_engine",
             "_janus_name",
-            "_janus_parent",
             "_restoring",
+            "_janus_snapshot",
+            "_janus_initiator",
             "_janus_adapter_name",
+            "_janus_parent",
         ]
-        _janus_adapter_name = "TrackedDataFrameAdapter"
+        _janus_adapter_name: str = "PandasAdapter"
 
-        def __init__(self, data: Any = None, *args: Any, **kwargs: Any) -> None:
-            # Ensure we don't force a copy if data is a view
-            if "copy" not in kwargs:
-                kwargs["copy"] = False
-            super().__init__(data=data, *args, **kwargs)
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            if not hasattr(self, "_restoring"):
+                object.__setattr__(self, "_restoring", False)
+
+        def __finalize__(
+            self, other: Any, method: str | None = None, **kwargs: Any
+        ) -> Any:
+            result = super().__finalize__(other, method=method, **kwargs)
+            if not hasattr(result, "_restoring"):
+                object.__setattr__(result, "_restoring", False)
+            return result
 
         @property
-        def _constructor(self) -> type[TrackedDataFrame]:
+        def _constructor(self) -> type:
             return TrackedDataFrame
 
         @property
-        def _constructor_sliced(self) -> type[TrackedSeries]:
+        def _constructor_sliced(self) -> type:
             return TrackedSeries
 
         @property
-        def loc(self) -> BaseTrackedIndexer:
-            return BaseTrackedIndexer(self, "loc")
+        def _is_restoring(self) -> bool:
+            return bool(
+                getattr(self, "_restoring", False)
+                or (
+                    hasattr(self, "_janus_engine")
+                    and self._janus_engine is not None
+                    and getattr(self._janus_engine.owner, "_restoring", False)
+                )
+            )
 
-        @property
-        def iloc(self) -> BaseTrackedIndexer:
-            return BaseTrackedIndexer(self, "iloc")
+        def __setitem__(self, key: Any, value: Any) -> None:
+            if self._is_restoring:
+                super().__setitem__(key, value)
+                return
 
-        @property
-        def at(self) -> BaseTrackedIndexer:
-            return BaseTrackedIndexer(self, "at")
-
-        @property
-        def iat(self) -> BaseTrackedIndexer:
-            return BaseTrackedIndexer(self, "iat")
+            log_pre_mutation(self)
+            super().__setitem__(key, value)
+            log_post_mutation(self)
 
         def __setattr__(self, key: str, value: Any) -> None:
             if key in [*self._metadata, "_restoring"]:
                 super().__setattr__(key, value)
                 return
 
-            if getattr(self, "_restoring", False) or (
-                hasattr(self, "_janus_engine")
-                and getattr(self._janus_engine.owner, "_restoring", False)
-            ):
+            if self._is_restoring:
                 super().__setattr__(key, value)
                 return
 
             log_pre_mutation(self)
             super().__setattr__(key, value)
-            self._sync_to_parent()
             log_post_mutation(self)
 
-        def __setitem__(self, key: Any, value: Any) -> None:
-            if key in [*self._metadata, "_restoring"]:
-                super().__setitem__(key, value)
-                return
+        @property
+        def loc(self) -> Any:
+            return TrackedLocIndexer(self)
 
-            if getattr(self, "_restoring", False) or (
-                hasattr(self, "_janus_engine")
-                and getattr(self._janus_engine.owner, "_restoring", False)
-            ):
-                super().__setitem__(key, value)
-                return
+        @property
+        def iloc(self) -> Any:
+            return TrackedIlocIndexer(self)
 
-            log_pre_mutation(self)
-            super().__setitem__(key, value)
-            self._sync_to_parent()
-            log_post_mutation(self)
+        @property
+        def at(self) -> Any:
+            return TrackedAtIndexer(self)
 
-        def _sync_to_parent(self) -> None:
-            parent = getattr(self, "_janus_parent", None)
-            key = getattr(self, "_janus_index_key", None)
-            indexer_name = getattr(self, "_janus_indexer", None)
-
-            if parent is not None and key is not None and indexer_name is not None:
-                # Avoid recursive logging by setting _restoring on parent
-                object.__setattr__(parent, "_restoring", True)
-                try:
-                    indexer = getattr(parent, indexer_name)
-                    indexer[key] = self
-                finally:
-                    object.__setattr__(parent, "_restoring", False)
-
-    # ------- Indexer Wrappers ------- #
-
-    class BaseTrackedIndexer:
-        """
-        A proxy for Pandas indexers that intercepts mutations for tracking.
-
-        This class wraps `.loc`, `.iloc`, `.at`, and `.iat` to ensure that
-        any mutation performed through them is captured by the Janus engine.
-        It also ensures that any resulting slices are themselves wrapped in
-        `TrackedSeries` or `TrackedDataFrame` proxies.
-        """
-
-        def __init__(
-            self,
-            parent_df: TrackedDataFrame | TrackedSeries,
-            indexer_name: str,
-        ) -> None:
-            self._parent = parent_df
-            self._indexer_name = indexer_name
-            # Get the real pandas indexer (e.g., df.loc) from the base class
-            self._real_indexer = getattr(
-                super(self._parent.__class__, self._parent), indexer_name
-            )
-
-        def __getattr__(self, name: str) -> Any:
-            # Proxy missing attributes (like _setitem_with_indexer) to the real indexer
-            return getattr(self._real_indexer, name)
-
-        def __getitem__(self, key: Any) -> Any:
-            # Transparency for reads
-            result = self._real_indexer[key]
-
-            # Use class-swapping or metadata injection to "Janus-ify" the result.
-            # This is critical for preserving view-links in pandas subclasses.
-            if isinstance(result, (pd.Series, pd.DataFrame)):
-                if isinstance(result, pd.Series) and not isinstance(
-                    result, TrackedSeries
-                ):
-                    result.__class__ = TrackedSeries
-                elif isinstance(result, pd.DataFrame) and not isinstance(
-                    result, TrackedDataFrame
-                ):
-                    result.__class__ = TrackedDataFrame
-
-                # Always apply/update metadata for this view relationship
-                object.__setattr__(
-                    result,
-                    "_janus_engine",
-                    getattr(self._parent, "_janus_engine", None),
-                )
-                object.__setattr__(
-                    result, "_janus_name", getattr(self._parent, "_janus_name", "view")
-                )
-                object.__setattr__(result, "_janus_parent", self._parent)
-                object.__setattr__(result, "_janus_index_key", key)
-                object.__setattr__(result, "_janus_indexer", self._indexer_name)
-
-                is_series = isinstance(result, pd.Series)
-                adapter = (
-                    "TrackedSeriesAdapter" if is_series else "TrackedDataFrameAdapter"
-                )
-                object.__setattr__(result, "_janus_adapter_name", adapter)
-
-            return result
-
-        def __setitem__(self, key: Any, value: Any) -> None:
-            if getattr(self._parent, "_restoring", False) or (
-                hasattr(self._parent, "_janus_engine")
-                and getattr(self._parent._janus_engine.owner, "_restoring", False)
-            ):
-                self._real_indexer.__setitem__(key, value)
-                return
-
-            # Intercept for writes
-            log_pre_mutation(self._parent)
-            self._real_indexer[key] = value
-            log_post_mutation(self._parent)
-
-    # ------- Adapters ------- #
+        @property
+        def iat(self) -> Any:
+            return TrackedIatIndexer(self)
 
     @register_adapter(TrackedDataFrame)
-    class TrackedDataFrameAdapter(JanusAdapter):
-        """
-        Janus adapter for Pandas DataFrames.
-
-        Optimizes state tracking by calculating sparse column-level deltas
-        instead of full-object snapshots where possible.
-        """
-
-        def get_delta(self, old_snapshot: Any, new_state: Any) -> Any:
-            """Calculate sparse column-level delta."""
-            old_delta = {}
-            new_delta = {}
-
-            # Detect changes in existing columns
-            for col in new_state.columns:
-                if col not in old_snapshot.columns or not new_state[col].equals(
-                    old_snapshot[col]
-                ):
-                    # Ensure we store raw pd.Series, not Tracked versions
-                    new_val = new_state[col]
-                    if isinstance(new_val, pd.Series):
-                        new_delta[col] = pd.Series(new_val, copy=True)
-                    else:
-                        new_delta[col] = new_val
-
-                    if col in old_snapshot.columns:
-                        old_val = old_snapshot[col]
-                        old_delta[col] = pd.Series(old_val, copy=True)
-                    else:
-                        old_delta[col] = None  # New column
-
-            # Detect dropped columns
-            for col in old_snapshot.columns:
-                if col not in new_state.columns:
-                    old_delta[col] = pd.Series(old_snapshot[col], copy=True)
-                    new_delta[col] = None
-
-            # Handle index/column name changes if necessary (Omitted for MVP simplicity)
-            return (old_delta, new_delta)
-
-        def apply_backward(self, target: Any, delta_blob: Any) -> None:
-            old_cols, _ = delta_blob
-            object.__setattr__(target, "_restoring", True)
-            try:
-                for col, val in old_cols.items():
-                    if val is None:
-                        if col in target.columns:
-                            del target[col]
-                    else:
-                        target[col] = val
-            finally:
-                object.__setattr__(target, "_restoring", False)
-
-        def apply_forward(self, target: Any, delta_blob: Any) -> None:
-            _, new_cols = delta_blob
-            object.__setattr__(target, "_restoring", True)
-            try:
-                for col, val in new_cols.items():
-                    if val is None:
-                        if col in target.columns:
-                            del target[col]
-                    else:
-                        target[col] = val
-            finally:
-                object.__setattr__(target, "_restoring", False)
-
-        def get_snapshot(self, value: Any) -> Any:
-            # Ensure raw dataframe is returned for serialization
-            return pd.DataFrame(value)
-
     @register_adapter(TrackedSeries)
-    class TrackedSeriesAdapter(JanusAdapter):
+    class PandasAdapter:
         """
-        Janus adapter for Pandas Series.
-
-        Handles forward and backward state transitions for individual Series objects.
+        Janus adapter for Pandas DataFrames and Series.
         """
 
-        def get_delta(self, old_snapshot: Any, new_state: Any) -> Any:
-            # Ensure raw series are stored
-            return (pd.Series(old_snapshot), pd.Series(new_state))
+        @staticmethod
+        def apply_forward(target: Any, delta_blob: Any) -> None:
+            _, new_state = delta_blob
+            if new_state is None:
+                return
 
-        def apply_backward(self, target: Any, delta_blob: Any) -> None:
-            old_series, _ = delta_blob
             object.__setattr__(target, "_restoring", True)
             try:
-                # Use public iloc assignment for robust restoration
-                target.iloc[:] = old_series.values
-                target.index = old_series.index
-                target.name = old_series.name
-            except Exception as e:
-                raise RuntimeError(f"Failed to restore Series: {e}")
+                if isinstance(target, (pd.DataFrame, pd.Series)):
+                    target.update(new_state)
             finally:
                 object.__setattr__(target, "_restoring", False)
 
-        def apply_forward(self, target: Any, delta_blob: Any) -> None:
-            _, new_series = delta_blob
+        @staticmethod
+        def apply_backward(target: Any, delta_blob: Any) -> None:
+            old_state, _ = delta_blob
+            if old_state is None:
+                return
+
             object.__setattr__(target, "_restoring", True)
             try:
-                target.iloc[:] = new_series.values
-                target.index = new_series.index
-                target.name = new_series.name
-            except Exception as e:
-                raise RuntimeError(f"Failed to restore Series: {e}")
+                if isinstance(target, (pd.DataFrame, pd.Series)):
+                    target.update(old_state)
             finally:
                 object.__setattr__(target, "_restoring", False)
 
-        def get_snapshot(self, value: Any) -> Any:
-            # Ensure raw series is returned
-            return pd.Series(value)
+        @staticmethod
+        def get_delta(old_state: Any, new_state: Any) -> Any:
+            if old_state is None:
+                return None, new_state
 
-except ImportError:
-    pass
+            if isinstance(new_state, pd.DataFrame):
+                # Only store columns that have actually changed
+                changed_cols = []
+                for col in new_state.columns:
+                    if col not in old_state.columns or not new_state[col].equals(
+                        old_state[col]
+                    ):
+                        changed_cols.append(col)
+                return old_state[changed_cols], new_state[changed_cols]
+
+            return old_state, new_state
+
+        @staticmethod
+        def get_snapshot(value: Any) -> Any:
+            return value.copy()

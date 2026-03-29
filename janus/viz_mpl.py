@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 
 try:
@@ -9,7 +11,7 @@ except ImportError:
     MPL_AVAILABLE = False
 
 if TYPE_CHECKING:
-    from .base import MultiverseBase
+    from janus.base import JanusBase
 
 
 class MatplotlibBackend:
@@ -20,7 +22,7 @@ class MatplotlibBackend:
     customizable colors and layout.
     """
 
-    def plot(self, obj: "MultiverseBase", **kwargs: Any) -> Any:
+    def plot(self, obj: JanusBase, **kwargs: Any) -> Any:
         """
         Renders the multiverse graph using Matplotlib.
 

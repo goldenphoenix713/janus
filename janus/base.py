@@ -1,19 +1,21 @@
-import contextlib
-import zipfile
-from collections.abc import Callable
-from pathlib import Path
-from typing import Any
+from __future__ import annotations
 
-import msgpack
+import copy
+from typing import TYPE_CHECKING, Any
 
-from .containers import wrap_value
-from .registry import ADAPTER_REGISTRY
-from .tachyon_rs import TachyonEngine
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
+from janus.options import options
+from janus.persistence import JanusPersistence
+from janus.registry import ADAPTER_REGISTRY, wrap_value
+from janus.tachyon_rs import TachyonEngine
+from janus.utils import resolve_path
+from janus.viz import get_backend
 
 try:
     import pandas as pd
-
-    from .plugins.pandas import TrackedDataFrame, TrackedSeries
 
     PANDAS_INSTALLED = True
 except ImportError:
@@ -25,53 +27,6 @@ try:
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
-
-if NUMPY_AVAILABLE:
-    from .plugins.numpy import TrackedNumpyArray
-
-
-def janus_encoder(obj: Any) -> Any:
-    """Custom encoder for Janus-tracked objects to ensure msgpack compatibility."""
-    from janus.containers import TrackedDict, TrackedList
-
-    if PANDAS_INSTALLED:
-        from janus.plugins.pandas import TrackedDataFrame, TrackedSeries
-
-        if isinstance(obj, (TrackedDataFrame, pd.DataFrame)):
-            return {
-                "__janus_type__": "pd.DataFrame",
-                "data": obj.to_dict(orient="split"),
-            }
-        if isinstance(obj, (TrackedSeries, pd.Series)):
-            return {
-                "__janus_type__": "pd.Series",
-                "data": obj.to_dict(),
-                "name": obj.name,
-            }
-
-    if isinstance(obj, TrackedDict):
-        return dict(obj)
-    if isinstance(obj, TrackedList):
-        return list(obj)
-
-    # If it's something else we don't know, let msgpack try its best
-    return obj
-
-
-def janus_decoder(obj: Any) -> Any:
-    """Custom decoder for Janus-tracked objects to re-hydrate during load."""
-    if isinstance(obj, dict) and "__janus_type__" in obj:
-        try:
-            import pandas as pd
-
-            if obj["__janus_type__"] == "pd.DataFrame":
-                # pd.DataFrame.from_dict doesn't support 'split', but constructor does
-                return pd.DataFrame(**obj["data"])
-            if obj["__janus_type__"] == "pd.Series":
-                return pd.Series(obj["data"], name=obj.get("name"))
-        except ImportError:
-            pass
-    return obj
 
 
 class JanusBase:
@@ -88,9 +43,8 @@ class JanusBase:
         Initialize a new Janus tracking instance.
 
         Args:
-            mode: The tracking mode ("linear" for Timeline, "multiversal" for
-                Multiverse).
-            max_history: The maximum number of state nodes to retain in the engine.
+            mode: The tracking mode ("linear" or "multiversal").
+            max_history: Max number of state nodes in the engine.
         """
         self._engine = TachyonEngine(self, mode, max_history)
         self._restoring = False
@@ -98,28 +52,13 @@ class JanusBase:
 
     def _resolve_path(self, path: str) -> Any:
         """Resolve a nested path like 'data[0].key' and return the object."""
-        import re
-
-        parts = re.split(r"(\[.*?\]|\.)", path)
-        curr: Any = self
-        for part in parts:
-            if not part or part == ".":
-                continue
-            if part.startswith("["):
-                idx: Any = part[1:-1]
-                with contextlib.suppress(ValueError):
-                    idx = int(idx)
-                curr = curr[idx]
-            else:
-                curr = getattr(curr, part)
-        return curr
+        return resolve_path(self, path)
 
     def __setattr__(self, name: str, value: Any) -> None:
         if name in ["_engine", "_restoring"]:
             super().__setattr__(name, value)
             return
 
-        # Check if we are currently in a state restoration
         if getattr(self, "_restoring", False):
             super().__setattr__(name, value)
             return
@@ -127,7 +66,18 @@ class JanusBase:
         # Capture old value for delta calculation
         old_value = getattr(self, name, None)
 
-        # Plugin Check Foundation
+        # 1. Handle Plugin/Container Wrapping & Special Assignment Logging
+        value, logged_plugin = self._handle_assignment(name, value)
+
+        # 2. Log Standard Attribute Update
+        if not logged_plugin:
+            self._log_attr_update(name, old_value, value)
+
+        super().__setattr__(name, value)
+
+    def _handle_assignment(self, name: str, value: Any) -> tuple[Any, bool]:
+        """Handle plugin-specific assignment logic and container wrapping."""
+        # If the value is a type directly registered for an adapter
         value_type = type(value)
         if value_type in ADAPTER_REGISTRY:
             adapter = ADAPTER_REGISTRY[value_type]
@@ -137,114 +87,70 @@ class JanusBase:
             if not self._restoring:
                 self._engine.log_plugin_op(name, type(adapter).__name__, delta_blob)
             super().__setattr__(shadow_name, adapter.get_snapshot(value))
-        else:
-            # Recursive Container Wrapping
-            value = wrap_value(value, self._engine, name)
+            return value, True
 
-            if PANDAS_INSTALLED and isinstance(value, pd.DataFrame):
-                value = TrackedDataFrame(value)
-                value._janus_engine = self._engine
-                value._janus_name = name
-            elif PANDAS_INSTALLED and isinstance(value, pd.Series):
-                value = TrackedSeries(value)
-                value._janus_engine = self._engine
-                value._janus_name = name
-            elif NUMPY_AVAILABLE and isinstance(value, np.ndarray):
-                if not isinstance(value, TrackedNumpyArray):
-                    value = TrackedNumpyArray(value)
+        # Otherwise, use the generic wrap_value
+        return wrap_value(value, self._engine, name, owner=self), False
 
-                # Ensure engine is set on the root of the array chain
-                root = getattr(value, "_janus_parent", value)
-                if root is None:  # Should not happen with new logic, but for safety
-                    root = value
+    def _log_attr_update(self, name: str, old_value: Any, new_value: Any) -> None:
+        """Log a standard attribute change to the engine."""
+        if name.startswith("_"):
+            return
 
-                root._janus_engine = self._engine
-                root._janus_name = name
+        if self._is_value_different(old_value, new_value):
+            # Handle snapshotting to prevent DAG history poisoning
+            snap_val = self._snapshot_for_history(new_value)
+            self._engine.log_update_attr(name, old_value, snap_val)
 
-                # Also ensure the current view has the engine reference
-                value._janus_engine = self._engine
-                value._janus_name = name
+    def _is_value_different(self, old: Any, new: Any) -> bool:
+        """Compare two values safely, avoiding truth-value ambiguity for arrays."""
+        if (
+            (PANDAS_INSTALLED and isinstance(new, (pd.DataFrame, pd.Series)))
+            or (NUMPY_AVAILABLE and isinstance(new, np.ndarray))
+            or (PANDAS_INSTALLED and isinstance(old, (pd.DataFrame, pd.Series)))
+            or (NUMPY_AVAILABLE and isinstance(old, np.ndarray))
+        ):
+            return bool(new is not old)
+        try:
+            return bool(old != new)
+        except Exception:
+            return True
 
-        # Log standard attribute update to Rust engine
-        if not name.startswith("_"):
-            # Avoid redundant logging when loading/sync_from_root
-            # has already mapped identity
-            try:
-                # Use identity for numpy/pandas to avoid value error,
-                # equality for others
-                if (
-                    (PANDAS_INSTALLED and isinstance(value, (pd.DataFrame, pd.Series)))
-                    or (NUMPY_AVAILABLE and isinstance(value, np.ndarray))
-                    or (
-                        PANDAS_INSTALLED
-                        and isinstance(old_value, (pd.DataFrame, pd.Series))
-                    )
-                    or (NUMPY_AVAILABLE and isinstance(old_value, np.ndarray))
-                ):
-                    changed = value is not old_value
-                else:
-                    changed = old_value != value
-            except Exception:
-                changed = True
+    def _snapshot_for_history(self, value: Any) -> Any:
+        """Create a deep, untracked copy of a value for storage in history."""
+        if isinstance(value, (list, dict)):
+            # Helper to recursively unwrap TrackedList/TrackedDict
+            def _unwrap(obj: Any) -> Any:
+                if isinstance(obj, list):
+                    return [_unwrap(x) for x in obj]
+                if isinstance(obj, dict):
+                    return {k: _unwrap(v) for k, v in obj.items()}
+                return obj
 
-            if changed:
-                # Handle snapshotting to prevent DAG history poisoning
-                snap_val = value
-                if isinstance(value, (list, dict)):
+            return copy.deepcopy(_unwrap(value))
 
-                    def _unwrap(obj: Any) -> Any:
-                        if isinstance(obj, list):
-                            return [_unwrap(x) for x in obj]
-                        if isinstance(obj, dict):
-                            return {k: _unwrap(v) for k, v in obj.items()}
-                        return obj
+        if PANDAS_INSTALLED and isinstance(value, (pd.DataFrame, pd.Series)):
+            return value.copy()
 
-                    import copy
+        if NUMPY_AVAILABLE and isinstance(value, np.ndarray):
+            return value.copy()
 
-                    snap_val = copy.deepcopy(_unwrap(value))
-
-                self._engine.log_update_attr(name, old_value, snap_val)
-
-        super().__setattr__(name, value)
+        return value
 
     def create_moment_label(self, label: str) -> None:
-        """
-        Assign a easy-to-read label to the current state node.
-
-        Labels can be used as targets for `jump_to`, `diff`, or `squash` operations.
-
-        Args:
-            label: The unique name for this moment in time.
-        """
+        """Assign a human-readable label to the current state node."""
         self._engine.label_node(label)
 
     def jump_to(self, label: str) -> None:
-        """
-        Restore the application state to a previously labeled moment.
-
-        This moves the engine's 'head' to the node identified by the label and
-        synchronizes all tracked Python attributes and containers.
-
-        Args:
-            label: The name of the labeled moment to restore.
-        """
+        """Restore the application state to a previously labeled moment."""
         self._engine.move_to(label)
 
     def get_labeled_moments(self) -> list[str]:
-        """
-        Retrieve a list of all labels assigned in the current history.
-
-        Returns:
-            A list of strings representing the available moment labels.
-        """
+        """Retrieve a list of all labels assigned in the current history."""
         return self._engine.list_nodes()
 
     def undo(self) -> None:
-        """
-        Revert the state to the previous node in the current timeline.
-
-        If the current node is the root, this operation has no effect.
-        """
+        """Revert the state to the previous node in the current timeline."""
         self._restoring = True
         try:
             self._engine.undo()
@@ -252,74 +158,55 @@ class JanusBase:
             self._restoring = False
 
     def redo(self) -> None:
-        """
-        Advance the state to the next node in the current timeline.
-
-        This is only possible if an `undo` was performed and no new mutations
-        have occurred since.
-        """
+        """Advance the state to the next node in the current timeline."""
         self._engine.redo()
 
-    def tag_moment(self, **kwargs: Any) -> None:
+    def apply_plugin_op(
+        self, path: str, adapter_name: str, delta: Any, forward: bool
+    ) -> None:
         """
-        Attach arbitrary metadata tags to the current state node.
+        Called by the engine to apply a plugin operation to a specific object.
 
         Args:
-            **kwargs: Key-value pairs to store as metadata.
+            path: The relative path to the object within this Janus instance.
+            adapter_name: The name of the adapter to use.
+            delta: The delta blob to apply.
+            forward: True if applying forward, False for backward (undo).
         """
+        print(
+            f"DEBUG: apply_plugin_op path={path} "
+            f"adapter={adapter_name} forward={forward}"
+        )
+        target = self._resolve_path(path)
+        adapter = self._adapters.get(adapter_name)
+        if adapter:
+            if forward:
+                adapter.apply_forward(target, delta)
+            else:
+                adapter.apply_backward(target, delta)
+
+    def tag_moment(self, **kwargs: Any) -> None:
+        """Attach arbitrary metadata tags to the current state node."""
         for key, value in kwargs.items():
             self._engine.set_metadata(key, value)
 
     def get_all_tag_keys(self, label: str | None = None) -> tuple[str, ...]:
-        """
-        Get all metadata keys associated with a specific moment.
-
-        Args:
-            label: The label of the moment to query. Defaults to the current moment.
-
-        Returns:
-            A tuple of metadata keys.
-        """
+        """Get all metadata keys associated with a specific moment."""
         node_id = self._resolve_label_to_id(label) if label else None
         return tuple(self._engine.get_metadata_keys(node_id))
 
     def get_all_tag_values(self, label: str | None = None) -> tuple[Any, ...]:
-        """
-        Get all metadata values associated with a specific moment.
-
-        Args:
-            label: The label of the moment to query. Defaults to the current moment.
-
-        Returns:
-            A tuple of metadata values.
-        """
+        """Get all metadata values associated with a specific moment."""
         node_id = self._resolve_label_to_id(label) if label else None
         return tuple(self._engine.get_metadata_values(node_id))
 
     def get_all_tags(self, label: str | None = None) -> dict[str, Any]:
-        """
-        Get all metadata key-value pairs associated with a specific moment.
-
-        Args:
-            label: The label of the moment to query. Defaults to the current moment.
-
-        Returns:
-            A dictionary of all tags for the specified moment.
-        """
+        """Get all metadata key-value pairs associated with a specific moment."""
         node_id = self._resolve_label_to_id(label) if label else None
         return dict(self._engine.get_metadata_items(node_id))
 
     def get_moment_tag(self, key: str, label: str | None = None) -> Any:
-        """
-        Retrieve a specific metadata value by key from a moment.
-
-        Args:
-            key: The metadata key to look up.
-            label: The label of the moment to query. Defaults to the current moment.
-
-        Returns:
-            The metadata value associated with the key, or None if not found.
-        """
+        """Retrieve a specific metadata value by key from a moment."""
         node_id = self._resolve_label_to_id(label) if label else None
         return self._engine.get_metadata(key, node_id)
 
@@ -336,20 +223,12 @@ class JanusBase:
     def squash(
         self, start_label: str | None = None, end_label: str | None = None
     ) -> None:
-        """
-        Collapse state nodes into a single node.
-
-        Usage:
-        - obj.squash(start, end): Collapses nodes between start and end.
-        - obj.squash(label): Collapses the entire branch up to label.
-        - obj.squash(): Collapses the current branch up to current node.
-        """
+        """Collapse state nodes into a single node."""
         if end_label is not None:
             if start_label is None:
                 raise ValueError("start_label required for range squash")
             self._engine.squash(start_label, end_label)
         else:
-            # Re-use engine's branch-based squashing logic
             self._engine.squash_branch(start_label)
 
     def flatten(self, label: str | None = None) -> None:
@@ -357,100 +236,37 @@ class JanusBase:
         self.squash(label)
 
     def diff(self, start_label: str, end_label: str) -> dict[str, Any]:
-        """
-        Compare the state between two moments (labels).
-        Returns a dictionary with 'attributes' and 'container_operations'.
-        """
+        """Compare the state between two moments (labels)."""
         return self._engine.get_diff(start_label, end_label)
 
     def save(self, path: str | Path) -> None:
-        """
-        Persist the entire multiverse/timeline history to a .jns file.
-        Uses a ZIP container with MessagePack serialization.
-        """
-        path = Path(path)
-        if path.suffix != ".jns":
-            path = path.with_suffix(".jns")
-
-        # 1. Get DAG from Rust
-        dag_state = self._engine.get_graph_state()
-
-        # 2. Extract Python context (shadow snapshots for plugins)
-        context = {k: v for k, v in self.__dict__.items() if k.startswith("_shadow_")}
-
-        # 3. Serialize.
-        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(
-                "dag.msgpack",
-                msgpack.packb(dag_state, default=janus_encoder, use_bin_type=True),
-            )
-            zf.writestr(
-                "context.msgpack",
-                msgpack.packb(context, default=janus_encoder, use_bin_type=True),
-            )
+        """Persist the entire multiverse/timeline history to a .jns file."""
+        JanusPersistence.save(self, path)
 
     def load(self, path: str | Path) -> None:
-        """
-        Restore history and state from a .jns file.
-        """
-        path = Path(path)
-        if not path.exists():
-            raise FileNotFoundError(f"Persistence file not found: {path}")
+        """Restore history and state from a .jns file."""
+        JanusPersistence.load(self, path)
 
-        with zipfile.ZipFile(path, "r") as zf:
-            dag_data = msgpack.unpackb(
-                zf.read("dag.msgpack"),
-                object_hook=janus_decoder,
-                strict_map_key=False,
-                raw=False,
-            )
-            ctx_data = msgpack.unpackb(
-                zf.read("context.msgpack"),
-                object_hook=janus_decoder,
-                strict_map_key=False,
-                raw=False,
-            )
+    def plot(self, backend: str | None = None, **kwargs: Any) -> Any:
+        """Visualize the multiverse DAG using a specialized backend."""
+        backend_name = backend or options.plotting.backend
+        engine = get_backend(backend_name)
+        return engine.plot(self, **kwargs)
 
-        # 1. Restore Rust engine state
-        self._engine.set_graph_state(dag_data)
-
-        self._restoring = True
-        try:
-            # 2. Re-hydrate Python context
-            for k, v in ctx_data.items():
-                setattr(self, k, v)
-
-            # 3. Synchronize live objects with the loaded head node
-            self._engine.sync_from_root()
-
-            # 4. Re-link top-level attributes to ensure they are tracked
-            for name, value in self.__dict__.items():
-                if not name.startswith("_"):
-                    # Re-trigger wrapping and engine linkage
-                    setattr(self, name, value)
-        finally:
-            self._restoring = False
+    def visualize(self) -> Any:
+        """Compatibility shortcut for Mermaid-based visualization."""
+        return self.plot(backend="mermaid")
 
 
 class TimelineBase(JanusBase):
-    """
-    A linear state tracking implementation.
-
-    TimelineBase enforces a single path of history. Undoing an operation and then
-    performing a new mutation will truncate the 'future' that was undone.
-    """
+    """A linear state tracking implementation."""
 
     def __init__(self, max_history: int = 50000) -> None:
         super().__init__("linear", max_history=max_history)
 
 
 class MultiverseBase(JanusBase):
-    """
-    A multiversal state tracking implementation supporting branching and merging.
-
-    MultiverseBase allows creating named branches from any point in history,
-    switching between them, and merging changes across branches.
-    """
+    """A multiversal state tracking implementation supporting branching and merging."""
 
     def __init__(self, max_history: int = 50000) -> None:
         super().__init__("multiversal", max_history=max_history)
@@ -461,12 +277,7 @@ class MultiverseBase(JanusBase):
         return self._engine.current_branch
 
     def branch(self, label: str) -> None:
-        """
-        Create a new branch from the current state.
-
-        Args:
-            label: The name of the new branch.
-        """
+        """Create a new branch from the current state."""
         self._engine.create_branch(label)
 
     def create_branch(self, label: str) -> None:
@@ -491,39 +302,22 @@ class MultiverseBase(JanusBase):
     def merge(
         self, label: str, strategy: str | Callable[..., Any] = "overshadow"
     ) -> None:
-        """
-        Merge changes from another branch into the current one.
-        Supported strategies:
-        - "overshadow": (Default) Source branch changes overwrite target
-          changes on conflict.
-        - "preserve": Target branch changes are kept on conflict.
-        - "strict": Raise an error if any conflicts are detected.
-        - Callable: A custom function (path, base, source, target) -> merged_val
-        """
+        """Merge changes from another branch into the current one."""
         self._engine.merge_branch(label, strategy)
 
     def extract_timeline(
         self, label: str | None = None, filter_attr: list[str] | str | None = None
     ) -> list[dict[str, Any]]:
-        """
-        Extract the history of operations from root to a specific node or label.
-        If filter_attr is provided (string or list of strings), only operations
-        affecting those attributes are returned.
-        """
+        """Extract history of operations from root to a specific node or label."""
         if isinstance(filter_attr, str):
             filter_attr = [filter_attr]
         return self._engine.extract_timeline(label, filter_attr)
 
     def find_moments(self, **criteria: Any) -> list[str | int]:
-        """
-        Search the entire multiverse for nodes matching the given metadata criteria.
-        Returns a list of labels (if the node is labeled) or node IDs.
-        """
-        # For now, we search for the first criterion to narrow down
+        """Search the entire multiverse for nodes matching criteria."""
         if not criteria:
             return []
 
-        # Get all node IDs matching all criteria
         all_matches: set[int] | None = None
         for key, value in criteria.items():
             matches = set(self._engine.find_nodes_by_metadata(key, value))
@@ -538,9 +332,7 @@ class MultiverseBase(JanusBase):
         if not all_matches:
             return []
 
-        # Resolve IDs to labels where possible
         results: list[str | int] = []
-        # Check if any matching node is a branch head
         branches = self._engine.list_branches()
         head_map = {}
         for b in branches:
@@ -557,31 +349,5 @@ class MultiverseBase(JanusBase):
         return results
 
     def delete_branch(self, label: str) -> None:
-        """
-        Permanently delete a branch and its head reference.
-
-        Note: This does not necessarily delete the nodes associated with the
-        branch if they are part of other branches' histories.
-
-        Args:
-            label: The name of the branch to delete.
-        """
+        """Permanently delete a branch and its head reference."""
         self._engine.delete_branch(label)
-
-    def plot(self, backend: str | None = None, **kwargs: Any) -> Any:
-        """
-        Visualize the multiverse DAG using a specialized backend.
-        Default backend can be configured via `janus.options.plotting.backend`.
-        """
-        from .options import options
-        from .viz import get_backend
-
-        backend_name = backend or options.plotting.backend
-        engine = get_backend(backend_name)
-        return engine.plot(self, **kwargs)
-
-    def visualize(self) -> Any:
-        """
-        Compatibility shortcut for Mermaid-based visualization.
-        """
-        return self.plot(backend="mermaid")
