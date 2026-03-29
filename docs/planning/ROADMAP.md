@@ -83,6 +83,16 @@ This roadmap outlines the path to a full implementation of the **Janus** archite
 
 ---
 
+## ⚡ Phase 8: Async & High-Concurrency Tracking (Priority 8)
+
+*Goal: Support asynchronous mutation logging and thread-safe multiversal operations.*
+
+- **8.1 ContextVar Integration**: Use `ContextVar` to track the "active timeline" per-task in asynchronous environments.
+- **8.2 Async Adapters**: Implement specialized adapters for async-first libraries.
+- **8.3 Read-Write Safety**: Ensure the Rust `TachyonEngine` handles concurrent mutation logs with granular locking.
+
+---
+
 ## Summary
 
 | Phase | Feature Focus | Blueprint Pillar |
@@ -94,5 +104,6 @@ This roadmap outlines the path to a full implementation of the **Janus** archite
 | **P5** | Memory Safety | Tombstone Strategy |
 | **P6** | Documentation | Searchable Tech Guides |
 | **P7** | Production Readiness | CI/CD, Benchmarks, Types |
+| **P8** | Async Support | Context-Aware Tracking |
 
 **🚀 Estimated Goal: v1.0 Production Ready in ~13 Weeks.**
