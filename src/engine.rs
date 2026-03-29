@@ -455,13 +455,15 @@ impl TachyonEngine {
         Ok(())
     }
 
-    #[pyo3(signature = (source_label, strategy = "overshadow"))]
+    #[pyo3(signature = (source_label, strategy = None))]
     pub fn merge_branch(
         &mut self,
         py: Python,
         source_label: String,
-        strategy: &str,
+        strategy: Option<Bound<'_, PyAny>>,
     ) -> PyResult<()> {
+        let strategy =
+            strategy.unwrap_or_else(|| pyo3::types::PyString::new(py, "overshadow").into_any());
         let source_id = *self.branch_labels.get(&source_label).ok_or_else(|| {
             PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
                 "Source branch '{}' not found",
@@ -486,27 +488,45 @@ impl TachyonEngine {
                     continue;
                 }
 
-                match strategy {
-                    "overshadow" => {
-                        merged_ops.push(Operation::UpdateAttr {
-                            name: name.clone(),
-                            old_value: target_val.clone_ref(py),
-                            new_value: source_val.clone_ref(py),
-                        });
+                if let Ok(strategy_str) = strategy.extract::<String>() {
+                    match strategy_str.as_str() {
+                        "overshadow" => {
+                            merged_ops.push(Operation::UpdateAttr {
+                                name: name.clone(),
+                                old_value: target_val.clone_ref(py),
+                                new_value: source_val.clone_ref(py),
+                            });
+                        }
+                        "preserve" => {}
+                        "strict" => {
+                            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                                "Merge conflict on attribute '{}'",
+                                name
+                            )));
+                        }
+                        _ => {
+                            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                                "Unknown merge strategy '{}'",
+                                strategy_str
+                            )));
+                        }
                     }
-                    "preserve" => {}
-                    "strict" => {
-                        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-                            "Merge conflict on attribute '{}'",
-                            name
-                        )));
-                    }
-                    _ => {
-                        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-                            "Unknown merge strategy '{}'",
-                            strategy
-                        )));
-                    }
+                } else if strategy.is_callable() {
+                    let merged_val = strategy.call1((
+                        name.clone(),
+                        old_at_base.clone_ref(py),
+                        source_val.clone_ref(py),
+                        target_val.clone_ref(py),
+                    ))?;
+                    merged_ops.push(Operation::UpdateAttr {
+                        name: name.clone(),
+                        old_value: target_val.clone_ref(py),
+                        new_value: merged_val.unbind(),
+                    });
+                } else {
+                    return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                        "Merge strategy must be a string or a callable",
+                    ));
                 }
             } else {
                 merged_ops.push(Operation::UpdateAttr {
@@ -520,7 +540,7 @@ impl TachyonEngine {
         let target_all_ops = self.get_all_ops(py, lca_id, target_id);
         let source_others = self.get_other_ops(py, lca_id, source_id);
         let reconciled_source =
-            self.reconcile_source_ops(py, &target_all_ops, source_others, strategy)?;
+            self.reconcile_source_ops(py, &target_all_ops, source_others, &strategy)?;
         merged_ops.extend(reconciled_source);
 
         if merged_ops.is_empty() && lca_id == source_id {

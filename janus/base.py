@@ -1,7 +1,6 @@
-from __future__ import annotations
-
 import contextlib
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -376,7 +375,9 @@ class MultiverseBase(JanusBase):
         """Alias for branch() to stay compatible with brainstorming terminology."""
         self._engine.label_node(label)
 
-    def merge(self, label: str, strategy: str = "overshadow") -> None:
+    def merge(
+        self, label: str, strategy: str | Callable[..., Any] = "overshadow"
+    ) -> None:
         """
         Merge changes from another branch into the current one.
         Supported strategies:
@@ -384,6 +385,7 @@ class MultiverseBase(JanusBase):
           changes on conflict.
         - "preserve": Target branch changes are kept on conflict.
         - "strict": Raise an error if any conflicts are detected.
+        - Callable: A custom function (path, base, source, target) -> merged_val
         """
         self._engine.merge_branch(label, strategy)
 

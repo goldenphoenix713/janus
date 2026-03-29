@@ -59,7 +59,7 @@ impl TachyonEngine {
         py: Python,
         target_ops: &[Operation],
         source_ops: Vec<Operation>,
-        strategy: &str,
+        strategy: &Bound<'_, PyAny>,
     ) -> PyResult<Vec<Operation>> {
         let mut reconciled = Vec::new();
         for s_op in source_ops {
@@ -75,7 +75,7 @@ impl TachyonEngine {
         py: Python,
         mut op: Operation,
         target_ops: &[Operation],
-        strategy: &str,
+        strategy: &Bound<'_, PyAny>,
     ) -> PyResult<Option<Operation>> {
         for t_op in target_ops {
             match (&op, t_op) {
@@ -108,7 +108,7 @@ impl TachyonEngine {
         py: Python,
         lo: &ListOperation,
         tlo: &ListOperation,
-        _strategy: &str,
+        _strategy: &Bound<'_, PyAny>,
     ) -> PyResult<Option<ListOperation>> {
         match (lo, tlo) {
             (
@@ -148,7 +148,7 @@ impl TachyonEngine {
         py: Python,
         do_op: &DictOperation,
         tdo_op: &DictOperation,
-        strategy: &str,
+        strategy: &Bound<'_, PyAny>,
     ) -> PyResult<Option<DictOperation>> {
         match (do_op, tdo_op) {
             (
@@ -158,7 +158,11 @@ impl TachyonEngine {
                     old_values,
                     new_values,
                 },
-                DictOperation::Update { keys: t_keys, .. },
+                DictOperation::Update {
+                    keys: t_keys,
+                    new_values: t_new_values,
+                    ..
+                },
             ) => {
                 let mut final_keys = Vec::new();
                 let mut final_old = Vec::new();
@@ -166,14 +170,37 @@ impl TachyonEngine {
 
                 for i in 0..keys.len() {
                     let k = &keys[i];
-                    if t_keys.contains(k) {
-                        if strategy == "strict" {
-                            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-                                "Merge conflict on dictionary key '{}'",
-                                k
-                            )));
-                        } else if strategy == "preserve" {
-                            continue; // Target wins
+                    if let Some(t_idx) = t_keys.iter().position(|tk| tk == k) {
+                        let base_val = &old_values[i];
+                        let source_val = &new_values[i];
+                        let target_val = &t_new_values[t_idx];
+
+                        if strategy.is_instance_of::<pyo3::types::PyString>() {
+                            let strategy_str = strategy.extract::<String>()?;
+                            if strategy_str == "strict" {
+                                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                                    format!("Merge conflict on dictionary key '{}'", k),
+                                ));
+                            } else if strategy_str == "preserve" {
+                                continue; // Target wins
+                            }
+                            // overshadow is default (continue to add)
+                        } else if strategy.is_callable() {
+                            let key_path = if path.is_empty() {
+                                k.clone()
+                            } else {
+                                format!("{}.{}", path, k)
+                            };
+                            let merged_val = strategy.call1((
+                                key_path,
+                                base_val.clone_ref(py),
+                                source_val.clone_ref(py),
+                                target_val.clone_ref(py),
+                            ))?;
+                            final_keys.push(k.clone());
+                            final_old.push(target_val.clone_ref(py));
+                            final_new.push(merged_val.unbind());
+                            continue;
                         }
                     }
                     final_keys.push(k.clone());
