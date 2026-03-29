@@ -2,11 +2,17 @@
 
 [![Janus CI](https://github.com/goldenphoenix713/janus/actions/workflows/ci.yml/badge.svg)](https://github.com/goldenphoenix713/janus/actions/workflows/ci.yml)
 [![License: MIT/Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/release/python-3120/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 
 > **The Extensible Multiverse Engine for Python Objects.**
 
 Janus provides a Git-like API for branching, switching, and flattening the state of complex Python objects, powered by a lightning-fast Rust backend (**Tachyon-RS**). No deep-copying, no manual history tracking, and near-zero performance penalties.
+
+## 📦 Installation
+
+```bash
+pip install janus-tachyon-rs
+```
 
 ## 🚀 Getting Started
 
@@ -137,12 +143,12 @@ sim.prune()
 
 ## 📚 Documentation
 
-- [Getting Started with Plugins](docs/plugins.md)
-- [Architecture Blueprint](docs/architecture/janus_blueprint.md)
-- [Technical Deep Dive](docs/architecture/TECHNICAL_DEEP_DIVE.md)
-- [Project Roadmap](docs/planning/ROADMAP.md)
-- [Ideas & Scratchpad](docs/planning/IDEAS.md)
-- [Contributing Guide](docs/governance/CONTRIBUTING.md)
+The full documentation is available at [janus.readthedocs.io](https://janus.readthedocs.io).
+
+- [Getting Started](https://janus.readthedocs.io/en/latest/getting_started.html)
+- [API Reference](https://janus.readthedocs.io/en/latest/api/index.html)
+- [Architecture Deep Dive](https://janus.readthedocs.io/en/latest/architecture/index.html)
+- [Contributing Guide](CONTRIBUTING.md)
 
 ## ⚡ Powered by Tachyon-RS
 
