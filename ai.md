@@ -597,3 +597,12 @@ Verified benchmarks show **constant logging latency (~6μs)** and **constant-tim
 | **Ideas** | Scratchpad for future features and explorations | `docs/planning/IDEAS.md` |
 | **Performance** | Benchmark data and O(1) verification | `docs/PERFORMANCE.md` |
 | **Contributing** | Dev setup, code style, PR process | `docs/governance/CONTRIBUTING.md` |
+
+---
+
+## 🚀 Next Steps
+
+The next major milestone for Janus is the implementation of **Sphinx Documentation** (Phase 6).
+
+- **Objective**: Create a professional, searchable technical reference.
+- **Key Tasks**: Setup Sphinx with Furo, auto-generate API docs from stubs/docstrings, and migrate technical deep-dive into a unified documentation site.

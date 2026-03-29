@@ -52,10 +52,21 @@ This roadmap outlines the path to a full implementation of the **Janus** archite
 
 *Goal: Ensure memory footprint remains minimal during complex histories.*
 
-- **5.1 Weak References**: Integrate `PyWeakref` in Rust to let the Python GC function normally.
-- **5.2 History Pruning**: Implement logic to discard old nodes based on a depth or memory limit.
-- **5.3 O(1) Verification**: Perform benchmarks to ensure the engine meets the performance target.
-- **⏱️ ETA: 2 Weeks**
+- **5.1 Weak References**: Integrate `PyWeakref` in Rust to let the Python GC function normally. ✅
+- **5.2 History Pruning**: Implement logic to discard old nodes based on a depth or memory limit. ✅
+- **5.3 O(1) Verification**: Perform benchmarks to ensure the engine meets the performance target. ✅
+- **✅ Complete**
+
+---
+
+## 📚 Phase 6: Professional Documentation (Priority 6)
+
+*Goal: Create high-quality, searchable technical documentation.*
+
+- **6.1 Sphinx Setup**: Initialize Sphinx with the `furo` theme.
+- **6.2 API Reference**: Auto-generate documentation from docstrings using `autodoc`.
+- **6.3 Technical Guides**: Migrate `ai.md` and `TECHNICAL_DEEP_DIVE.md` into Sphinx chapters.
+- **⏱️ ETA: 3 Days**
 
 ---
 
