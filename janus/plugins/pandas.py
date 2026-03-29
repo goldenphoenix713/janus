@@ -20,6 +20,13 @@ if PANDAS_INSTALLED:
         """Base class for Janus-aware pandas indexers."""
 
         def __init__(self, name: str, parent: Any) -> None:
+            """
+            Initialize the Janus-aware indexer.
+
+            Args:
+                name: The name of the indexer (e.g., 'loc', 'iloc').
+                parent: The TrackedSeries or TrackedDataFrame being indexed.
+            """
             self._name = name
             self._parent = parent
             # Get the original indexer from the base pandas class
@@ -32,6 +39,16 @@ if PANDAS_INSTALLED:
             return getattr(self._indexer, name)
 
         def __getitem__(self, key: Any) -> Any:
+            """
+            Retrieve an item from the underlying indexer and wrap it if it's a
+            Pandas object.
+
+            Args:
+                key: The indexer key (e.g., slice, label, integer).
+
+            Returns:
+                The retrieved value, wrapped in Janus if it's a Series or DataFrame.
+            """
             result = self._indexer[key]
 
             if isinstance(result, pd.DataFrame):
@@ -51,6 +68,13 @@ if PANDAS_INSTALLED:
             return result
 
         def __setitem__(self, key: Any, value: Any) -> None:
+            """
+            Set an item via the underlying indexer and log the mutation.
+
+            Args:
+                key: The indexer key.
+                value: The new value to set.
+            """
             if getattr(self._parent, "_restoring", False) or (
                 hasattr(self._parent, "_janus_engine")
                 and self._parent._janus_engine is not None
@@ -91,6 +115,18 @@ if PANDAS_INSTALLED:
 
     @register_wrapper(pd.DataFrame)
     def wrap_dataframe(value: Any, engine: Any, path: str, owner: Any = None) -> Any:
+        """
+        Wrap a pandas DataFrame in a TrackedDataFrame with Janus metadata.
+
+        Args:
+            value: The DataFrame to wrap.
+            engine: The Janus engine instance.
+            path: The name or path of the object in the store.
+            owner: The parent object, if any (used for view-linkage).
+
+        Returns:
+            The DataFrame, swapped to the TrackedDataFrame class.
+        """
         if not isinstance(value, TrackedDataFrame):
             value.__class__ = TrackedDataFrame
             if not hasattr(value, "_restoring"):
@@ -103,6 +139,18 @@ if PANDAS_INSTALLED:
 
     @register_wrapper(pd.Series)
     def wrap_series(value: Any, engine: Any, path: str, owner: Any = None) -> Any:
+        """
+        Wrap a pandas Series in a TrackedSeries with Janus metadata.
+
+        Args:
+            value: The Series to wrap.
+            engine: The Janus engine instance.
+            path: The name or path of the object in the store.
+            owner: The parent object, if any (used for view-linkage).
+
+        Returns:
+            The Series, swapped to the TrackedSeries class.
+        """
         if not isinstance(value, TrackedSeries):
             value.__class__ = TrackedSeries
             if not hasattr(value, "_restoring"):
@@ -136,6 +184,9 @@ if PANDAS_INSTALLED:
         _janus_adapter_name: str = "PandasAdapter"
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
+            """
+            Initialize a TrackedSeries and ensure the restoration flag is set.
+            """
             super().__init__(*args, **kwargs)
             if not hasattr(self, "_restoring"):
                 object.__setattr__(self, "_restoring", False)
@@ -143,6 +194,9 @@ if PANDAS_INSTALLED:
         def __finalize__(
             self, other: Any, method: str | None = None, **kwargs: Any
         ) -> Any:
+            """
+            Propagate Janus metadata during Pandas operations.
+            """
             result = super().__finalize__(other, method=method, **kwargs)
             if not hasattr(result, "_restoring"):
                 object.__setattr__(result, "_restoring", False)
@@ -150,14 +204,23 @@ if PANDAS_INSTALLED:
 
         @property
         def _constructor(self) -> type:
+            """
+            Constructor for new Series instances.
+            """
             return TrackedSeries
 
         @property
         def _constructor_expanddim(self) -> type:
+            """
+            Constructor for expanding to a DataFrame.
+            """
             return TrackedDataFrame
 
         @property
         def _is_restoring(self) -> bool:
+            """
+            Return True if the object or its parent engine is in a restoration state.
+            """
             return bool(
                 getattr(self, "_restoring", False)
                 or (
@@ -168,6 +231,9 @@ if PANDAS_INSTALLED:
             )
 
         def __setitem__(self, key: Any, value: Any) -> None:
+            """
+            Set an item and log the mutation to Janus.
+            """
             if self._is_restoring:
                 super().__setitem__(key, value)
                 return
@@ -177,6 +243,9 @@ if PANDAS_INSTALLED:
             log_post_mutation(self)
 
         def __setattr__(self, key: str, value: Any) -> None:
+            """
+            Set an attribute and log the mutation if it's not internal metadata.
+            """
             if key in [*self._metadata, "_restoring"]:
                 super().__setattr__(key, value)
                 return
@@ -191,18 +260,30 @@ if PANDAS_INSTALLED:
 
         @property
         def loc(self) -> Any:
+            """
+            Label-based indexer for the TrackedSeries.
+            """
             return TrackedLocIndexer(self)
 
         @property
         def iloc(self) -> Any:
+            """
+            Integer-based indexer for the TrackedSeries.
+            """
             return TrackedIlocIndexer(self)
 
         @property
         def at(self) -> Any:
+            """
+            Fast label-based scalar accessor for the TrackedSeries.
+            """
             return TrackedAtIndexer(self)
 
         @property
         def iat(self) -> Any:
+            """
+            Fast integer-based scalar accessor for the TrackedSeries.
+            """
             return TrackedIatIndexer(self)
 
     class TrackedDataFrame(pd.DataFrame):  # type: ignore[misc]
@@ -226,6 +307,9 @@ if PANDAS_INSTALLED:
         _janus_adapter_name: str = "PandasAdapter"
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
+            """
+            Initialize a TrackedDataFrame and ensure the restoration flag is set.
+            """
             super().__init__(*args, **kwargs)
             if not hasattr(self, "_restoring"):
                 object.__setattr__(self, "_restoring", False)
@@ -233,6 +317,9 @@ if PANDAS_INSTALLED:
         def __finalize__(
             self, other: Any, method: str | None = None, **kwargs: Any
         ) -> Any:
+            """
+            Propagate Janus metadata during Pandas operations.
+            """
             result = super().__finalize__(other, method=method, **kwargs)
             if not hasattr(result, "_restoring"):
                 object.__setattr__(result, "_restoring", False)
@@ -240,14 +327,23 @@ if PANDAS_INSTALLED:
 
         @property
         def _constructor(self) -> type:
+            """
+            Constructor for new DataFrame instances.
+            """
             return TrackedDataFrame
 
         @property
         def _constructor_sliced(self) -> type:
+            """
+            Constructor for sliced Series instances.
+            """
             return TrackedSeries
 
         @property
         def _is_restoring(self) -> bool:
+            """
+            Return True if the object or its parent engine is in a restoration state.
+            """
             return bool(
                 getattr(self, "_restoring", False)
                 or (
@@ -258,6 +354,9 @@ if PANDAS_INSTALLED:
             )
 
         def __setitem__(self, key: Any, value: Any) -> None:
+            """
+            Set an item and log the mutation to Janus.
+            """
             if self._is_restoring:
                 super().__setitem__(key, value)
                 return
@@ -267,6 +366,9 @@ if PANDAS_INSTALLED:
             log_post_mutation(self)
 
         def __setattr__(self, key: str, value: Any) -> None:
+            """
+            Set an attribute and log the mutation if it's not internal metadata.
+            """
             if key in [*self._metadata, "_restoring"]:
                 super().__setattr__(key, value)
                 return
@@ -281,18 +383,30 @@ if PANDAS_INSTALLED:
 
         @property
         def loc(self) -> Any:
+            """
+            Label-based indexer for the TrackedDataFrame.
+            """
             return TrackedLocIndexer(self)
 
         @property
         def iloc(self) -> Any:
+            """
+            Integer-based indexer for the TrackedDataFrame.
+            """
             return TrackedIlocIndexer(self)
 
         @property
         def at(self) -> Any:
+            """
+            Fast label-based scalar accessor for the TrackedDataFrame.
+            """
             return TrackedAtIndexer(self)
 
         @property
         def iat(self) -> Any:
+            """
+            Fast integer-based scalar accessor for the TrackedDataFrame.
+            """
             return TrackedIatIndexer(self)
 
     @register_adapter(TrackedDataFrame)
@@ -304,6 +418,13 @@ if PANDAS_INSTALLED:
 
         @staticmethod
         def apply_forward(target: Any, delta_blob: Any) -> None:
+            """
+            Apply a forward mutation to the Pandas object.
+
+            Args:
+                target: The object to update.
+                delta_blob: A tuple of (old_state, new_state).
+            """
             _, new_state = delta_blob
             if new_state is None:
                 return
@@ -317,6 +438,13 @@ if PANDAS_INSTALLED:
 
         @staticmethod
         def apply_backward(target: Any, delta_blob: Any) -> None:
+            """
+            Apply a backward mutation to the Pandas object.
+
+            Args:
+                target: The object to restore.
+                delta_blob: A tuple of (old_state, new_state).
+            """
             old_state, _ = delta_blob
             if old_state is None:
                 return
@@ -330,6 +458,18 @@ if PANDAS_INSTALLED:
 
         @staticmethod
         def get_delta(old_state: Any, new_state: Any) -> Any:
+            """
+            Calculate the delta between two states of a Pandas object.
+
+            For DataFrames, this only stores columns that have changed.
+
+            Args:
+                old_state: The previous state snapshot.
+                new_state: The current state snapshot.
+
+            Returns:
+                A tuple containing the changed portions of (old_state, new_state).
+            """
             if old_state is None:
                 return None, new_state
 
@@ -347,4 +487,7 @@ if PANDAS_INSTALLED:
 
         @staticmethod
         def get_snapshot(value: Any) -> Any:
+            """
+            Create a deep copy of the Pandas object for snapshotting.
+            """
             return value.copy()

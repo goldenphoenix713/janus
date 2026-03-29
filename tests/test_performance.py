@@ -33,7 +33,6 @@ def test_mutation_o1_scaling() -> None:
 
     # O(1) Assertion: Latency should not have exploded.
     # We allow a small margin for cache effects, but it shouldn't be 10x slower.
-    print(f"Early latency: {duration_early:.8f}s, Late latency: {duration_late:.8f}s")
     assert duration_late < duration_early * 5, (
         f"Mutation latency scaled linearly! {duration_late} vs {duration_early}"
     )
@@ -50,10 +49,7 @@ def test_branching_o1_scaling() -> None:
     obj = State()
 
     # 1. Initial branch
-    start_early = time.perf_counter()
     obj.branch("early_branch")
-    end_early = time.perf_counter()
-    duration_early = end_early - start_early
 
     # 2. Grow history
     for i in range(10_000):
@@ -65,10 +61,6 @@ def test_branching_o1_scaling() -> None:
     end_late = time.perf_counter()
     duration_late = end_late - start_late
 
-    print(
-        f"Early branch latency: {duration_early:.8f}s, "
-        f"Late branch latency: {duration_late:.8f}s"
-    )
     # Branching should still be extremely fast.
     assert duration_late < 0.01, f"Branching too slow: {duration_late}s"
 
@@ -93,9 +85,6 @@ def test_pruning_performance() -> None:
     avg_latency = sum(latencies) / len(latencies)
     max_latency = max(latencies)
 
-    print(
-        f"Avg latency with pruning: {avg_latency:.8f}s, Max latency: {max_latency:.8f}s"
-    )
     # Even with pruning, it should stay well under 1ms for simple cases.
     assert avg_latency < 0.001
     assert max_latency < 0.05

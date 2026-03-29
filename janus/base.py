@@ -173,10 +173,6 @@ class JanusBase:
             delta: The delta blob to apply.
             forward: True if applying forward, False for backward (undo).
         """
-        print(
-            f"DEBUG: apply_plugin_op path={path} "
-            f"adapter={adapter_name} forward={forward}"
-        )
         target = self._resolve_path(path)
         adapter = self._adapters.get(adapter_name)
         if adapter:
