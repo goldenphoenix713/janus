@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import janus.registry as registry
+from janus.logger import logger
 from janus.utils import get_engine
 
 
@@ -82,6 +83,7 @@ def log_post_mutation(obj: Any, adapter_name: str | None = None) -> None:
             adapter_name = getattr(root, "_janus_adapter_name", type(adapter).__name__)
 
         root_name = getattr(root, "_janus_name", "unknown")
+        logger.trace(f"Logging plugin operation for {root_name} via {adapter_name}")
         engine.log_plugin_op(
             root_name,
             adapter_name,

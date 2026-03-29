@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol, TypeVar
 
+from janus.logger import logger
+
 T = TypeVar("T", bound=type)
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -54,6 +56,9 @@ def register_adapter(target_class: type) -> Callable[[T], T]:
 
     def wrapper(adapter_class: T) -> T:
         ADAPTER_REGISTRY[target_class] = adapter_class()
+        logger.debug(
+            f"Registered adapter {adapter_class.__name__} for {target_class.__name__}"
+        )
         return adapter_class
 
     return wrapper
@@ -66,6 +71,7 @@ def register_wrapper(target_class: type) -> Callable[[F], F]:
 
     def wrapper(func: F) -> F:
         WRAPPER_REGISTRY[target_class] = func
+        logger.debug(f"Registered wrapper {func.__name__} for {target_class.__name__}")
         return func
 
     return wrapper

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from janus.logger import logger
 from janus.registry import CONTAINER_REGISTRY, wrap_value
 from janus.tachyon_rs import TachyonEngine, TrackedDictCore, TrackedListCore
 
@@ -51,6 +52,7 @@ class TrackedList(list):  # type: ignore[type-arg]
             elif isinstance(wrapped, dict):
                 dag_val = dict(wrapped)
             self._core.log_insert(len(self) - 1, dag_val)
+            logger.trace(f"TrackedList ({self._name}) appended item")
 
     def extend(self, values: Any) -> None:
         start_idx = len(self)
@@ -63,6 +65,9 @@ class TrackedList(list):  # type: ignore[type-arg]
         super().extend(wrapped_values)
         if not self._is_silent:
             self._core.log_extend(wrapped_values)
+            logger.trace(
+                f"TrackedList ({self._name}) extended with {len(values)} items"
+            )
 
     def insert(self, index: int, value: Any) -> None:  # type: ignore[override]
         wrapped = wrap_value(
@@ -84,6 +89,7 @@ class TrackedList(list):  # type: ignore[type-arg]
         value = super().pop(index)
         if not self._is_silent:
             self._core.log_pop(index, value)
+            logger.trace(f"TrackedList ({self._name}) popped item at {index}")
         return value
 
     def clear(self) -> None:
@@ -176,6 +182,7 @@ class TrackedDict(dict):  # type: ignore[type-arg]
         super().__delitem__(key)
         if not self._is_silent:
             self._core.log_delete(str(key), old_value)
+            logger.trace(f"TrackedDict ({self._name}) deleted key: {key}")
 
     def update(self, other: Any = (), /, **kwargs: Any) -> None:
         actual_other = other if hasattr(other, "keys") else dict(other)

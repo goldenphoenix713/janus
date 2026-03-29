@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from janus.logger import logger
 from janus.plugins.utils import log_post_mutation, log_pre_mutation
 from janus.registry import register_adapter, register_wrapper
 
@@ -115,6 +116,7 @@ if NUMPY_AVAILABLE:
                 delta_blob: A tuple of (old_state, new_state) arrays.
             """
             _, new = delta_blob
+            logger.trace("NumpyAdapter applying forward mutation")
             object.__setattr__(target, "_restoring", True)
             try:
                 if target.shape == new.shape:
@@ -136,6 +138,7 @@ if NUMPY_AVAILABLE:
                 delta_blob: A tuple of (old_state, new_state) arrays.
             """
             old, _ = delta_blob
+            logger.trace("NumpyAdapter applying backward mutation")
             object.__setattr__(target, "_restoring", True)
             try:
                 if target.shape == old.shape:

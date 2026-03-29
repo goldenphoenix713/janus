@@ -63,10 +63,23 @@ This roadmap outlines the path to a full implementation of the **Janus** archite
 
 *Goal: Create high-quality, searchable technical documentation.*
 
-- **6.1 Sphinx Setup**: Initialize Sphinx with the `furo` theme.
-- **6.2 API Reference**: Auto-generate documentation from docstrings using `autodoc`.
-- **6.3 Technical Guides**: Migrate `ai.md` and `TECHNICAL_DEEP_DIVE.md` into Sphinx chapters.
-- **⏱️ ETA: 3 Days**
+- **6.1 Sphinx Setup**: Initialize Sphinx with the `furo` theme. ✅
+- **6.2 API Reference**: Auto-generate documentation from docstrings using `autodoc`. ✅
+- **6.3 Technical Guides**: Migrate `ai.md` and `TECHNICAL_DEEP_DIVE.md` into Sphinx chapters. ✅
+- **✅ Complete**
+
+---
+
+## 🛠️ Phase 7: Production Readiness & Code Quality (Priority 7)
+
+*Goal: Elevate the codebase to top-notch production standards.*
+
+- **7.1 Continuous Integration (CI/CD)**: Set up GitHub Actions for matrix testing (`pytest`, `cargo test`) across OS and Python versions. Automate `pre-commit` checks.
+- **7.2 Formalized Benchmarking**: Integrate `pytest-benchmark` to rigorously track latency over time and catch performance regressions automatically.
+- **7.3 Automated Publishing**: Introduce `maturin` and a PyPI release pipeline to build and publish cross-platform binary wheels.
+- **7.4 Documentation Automation**: Deploy Sphinx/MyST documentation automatically to GitHub Pages or ReadTheDocs.
+- **7.5 Strict Typing**: Resolve remaining `# type: ignore` statements in containers and plugins with robust `TypeVar` generics and `overload` signatures for improved IDE support.
+- **7.6 Code Quality Enforcement**: Enforce a strict minimum coverage threshold (e.g., >95%) via `pytest-cov`.
 
 ---
 
@@ -79,5 +92,7 @@ This roadmap outlines the path to a full implementation of the **Janus** archite
 | **P3** | Plugins/Containers | Extensible Plugin System |
 | **P4** | Timelines | Timeline Extraction |
 | **P5** | Memory Safety | Tombstone Strategy |
+| **P6** | Documentation | Searchable Tech Guides |
+| **P7** | Production Readiness | CI/CD, Benchmarks, Types |
 
 **🚀 Estimated Goal: v1.0 Production Ready in ~13 Weeks.**

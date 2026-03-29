@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 import msgpack
 
+from janus.logger import logger
+
 try:
     import pandas as pd
 
@@ -68,6 +70,8 @@ class JanusPersistence:
         if path.suffix != ".jns":
             path = path.with_suffix(".jns")
 
+        logger.info(f"Saving multiversal history to {path}")
+
         # 1. Get DAG from Rust
         dag_state = obj._engine.get_graph_state()
 
@@ -90,7 +94,10 @@ class JanusPersistence:
         """Restore history and state from a .jns file."""
         path = Path(path)
         if not path.exists():
+            logger.error(f"Failed to load: Persistence file not found -> {path}")
             raise FileNotFoundError(f"Persistence file not found: {path}")
+
+        logger.info(f"Loading multiversal history from {path}")
 
         with zipfile.ZipFile(path, "r") as zf:
             dag_data = msgpack.unpackb(

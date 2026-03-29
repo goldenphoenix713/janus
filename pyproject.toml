@@ -9,6 +9,7 @@ description = "Extensible, non-linear state travel powered by the Tachyon-RS eng
 authors = [{ name = "AI Dev Team", email = "dev@example.com" }]
 requires-python = ">=3.12"
 dependencies = [
+    "loguru>=0.7.3",
     "msgpack>=1.1.2",
 ]
 readme = "README.md"

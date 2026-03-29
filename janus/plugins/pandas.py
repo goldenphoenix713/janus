@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from janus.logger import logger
 from janus.plugins.utils import log_post_mutation, log_pre_mutation
 from janus.registry import register_adapter, register_wrapper, wrap_value
 
@@ -429,6 +430,7 @@ if PANDAS_INSTALLED:
             if new_state is None:
                 return
 
+            logger.trace("PandasAdapter applying forward mutation")
             object.__setattr__(target, "_restoring", True)
             try:
                 if isinstance(target, (pd.DataFrame, pd.Series)):
@@ -449,6 +451,7 @@ if PANDAS_INSTALLED:
             if old_state is None:
                 return
 
+            logger.trace("PandasAdapter applying backward mutation")
             object.__setattr__(target, "_restoring", True)
             try:
                 if isinstance(target, (pd.DataFrame, pd.Series)):

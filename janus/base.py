@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+from janus.logger import logger
 from janus.options import options
 from janus.persistence import JanusPersistence
 from janus.registry import ADAPTER_REGISTRY, wrap_value
@@ -86,6 +87,7 @@ class JanusBase:
             delta_blob = adapter.get_delta(shadow_value, value)
             if not self._restoring:
                 self._engine.log_plugin_op(name, type(adapter).__name__, delta_blob)
+                logger.trace(f"Logged plugin op: {name} via {type(adapter).__name__}")
             super().__setattr__(shadow_name, adapter.get_snapshot(value))
             return value, True
 
@@ -101,6 +103,7 @@ class JanusBase:
             # Handle snapshotting to prevent DAG history poisoning
             snap_val = self._snapshot_for_history(new_value)
             self._engine.log_update_attr(name, old_value, snap_val)
+            logger.trace(f"Logged attribute update: {name}")
 
     def _is_value_different(self, old: Any, new: Any) -> bool:
         """Compare two values safely, avoiding truth-value ambiguity for arrays."""
@@ -176,6 +179,10 @@ class JanusBase:
         target = self._resolve_path(path)
         adapter = self._adapters.get(adapter_name)
         if adapter:
+            logger.debug(
+                f"Applying plugin op: path='{path}', "
+                f"adapter='{adapter_name}', forward={forward}"
+            )
             if forward:
                 adapter.apply_forward(target, delta)
             else:
