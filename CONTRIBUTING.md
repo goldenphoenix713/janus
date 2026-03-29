@@ -22,7 +22,8 @@ We use `uv` and `maturin` for development.
 git clone https://github.com/your-username/janus.git
 cd janus
 
-# Build the Rust extension in develop mode
+# Build the Rust extension with all optional dependencies
+uv sync --all-extras
 uv run maturin develop
 ```
 

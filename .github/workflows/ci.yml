@@ -29,7 +29,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install Python Dependencies
-        run: uv sync --all-groups
+        run: uv sync --all-extras
 
       - name: Run Pre-Commit Hooks
         run: uv run pre-commit run --all-files
@@ -52,7 +52,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install Dependencies
-        run: uv sync --group docs
+        run: uv sync --extra docs
 
       - name: Build Janus (Maturin)
         run: uv run maturin develop
@@ -84,7 +84,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install Python Dependencies
-        run: uv sync --all-groups
+        run: uv sync --all-extras
 
       - name: Build Janus (Maturin)
         run: uv run maturin develop
