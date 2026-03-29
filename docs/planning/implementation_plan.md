@@ -12,9 +12,9 @@ Before laying out the work, here's where each roadmap phase actually stands toda
 | :--- | :--- | :--- |
 | **P1 — Linear Foundation** | "2 Weeks" | **100% done.** Base classes (`TimelineBase` / `MultiverseBase`) and Rust-native `undo()` / `redo()` are complete, including "overwrite future" logic and linear-mode guards. |
 | **P2 — Multiversal Branching** | "3 Weeks" | **100% done.** DAG nodes, branching, bidirectional `PluginOp` application (including Shadow Snapshots), branch deletion and listing are complete. |
-| **P3 — Plugins & Containers** | "4 Weeks" | **~95% done.** `TrackedList`/`TrackedDict` fully implemented; Pandas and NumPy adapters complete. |
+| **P3 — Plugins & Containers** | "4 Weeks" | **100% done.** `TrackedList`/`TrackedDict` fully implemented; Pandas and NumPy adapters complete. |
 | **P4 — Timeline & Flattening** | "2 Weeks" | **~40% done.** `extract_timeline` returns a flat list of dicts. **Gap:** no "history flattening / squash"; no rich formatting or filtering; no timeline diff. |
-| **P5 — Tombstone & Memory** | "2 Weeks" | **0% done.** No weak refs, no pruning, no benchmarks for memory. |
+| **P5 — Tombstone & Memory** | "2 Weeks" | **80% done.** WeakRef-based memory safety and tombstone detection implemented; needs more pruning strategies and benchmarks. |
 
 ---
 

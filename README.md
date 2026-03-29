@@ -123,7 +123,7 @@ Janus supports **intelligent 3-way reconciliation** for native Python lists and 
 
 ## ⚡ Powered by Tachyon-RS
 
-Under the hood, Janus offloads all state delta logic to **Tachyon-RS**, a specialized Rust engine that operates on a Directed Acyclic Graph (DAG) of state nodes. By storing only bi-directional operations, Tachyon-RS enables time travel with $O(1)$ logging overhead.
+Under the hood, Janus offloads all state delta logic to **Tachyon-RS**, a modularized Rust engine that operates on a Directed Acyclic Graph (DAG) of state nodes. By storing only bi-directional operations and utilizing specialized modules for graph traversal and reconciliation, Tachyon-RS enables time travel with $O(1)$ logging overhead.
 
 ## License
 

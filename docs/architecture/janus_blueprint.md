@@ -27,8 +27,12 @@ janus/
 ├── README.md
 ├── src/
 │   ├── lib.rs
-│   ├── engine.rs             # DAG-based Tachyon Multiverse logic & Timeline extraction
-│   └── containers.rs
+│   ├── engine.rs             # TachyonEngine API Layer
+│   ├── models.rs             # Core Data Models (Operation, StateNode)
+│   ├── graph.rs              # DAG/LCA algorithms
+│   ├── reconcile.rs          # 3-way container merge logic
+│   ├── serde_py.rs           # Python serialization
+│   └── containers.rs         # TrackedListCore, TrackedDictCore
 ├── janus/
 │   ├── __init__.py
 │   ├── base.py               # JanusBase, TimelineBase, MultiverseBase
@@ -86,14 +90,23 @@ name = "tachyon_rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38", "multiple-pymethods"] }
+pyo3 = { version = "0.23", features = ["extension-module", "multiple-pymethods"] }
 ```
 
 ---
 
-## 4. Rust Backend Implementation (`src/`)
+### Rust Backend Architecture (`src/`)
 
-### `src/engine.rs` (The Extensible DAG Engine)
+The engine is modularized for maintainability:
+
+* **`engine.rs`**: High-level `TachyonEngine` API.
+* **`models.rs`**: `Operation`, `StateNode`, and `Mode` enums/structs.
+* **`graph.rs`**: LCA and pathfinding on the DAG.
+* **`reconcile.rs`**: Container-specific move and conflict resolution.
+* **`containers.rs`**: `TrackedListCore` and `TrackedDictCore`.
+* **`serde_py.rs`**: Serialization to Python types.
+
+#### `src/models.rs` (Core Data Models)
 
 ```rust
 use pyo3::prelude::*;
@@ -112,16 +125,20 @@ pub struct StateNode {
     pub id: usize,
     pub parents: Vec<usize>,
     pub deltas: Vec<Operation>,
+    pub metadata: HashMap<String, PyObject>,
+    pub timestamp: u64,
 }
 
 #[pyclass]
 pub struct TachyonEngine {
-    owner: Py<PyAny>,
-    nodes: HashMap<usize, StateNode>,
-    branches: HashMap<String, usize>,
-    current_node: usize,
-    next_node_id: usize,
-    mode: String, // "linear" or "multiversal"
+    pub owner: Py<pyo3::types::PyWeakref>,
+    pub nodes: HashMap<usize, StateNode>,
+    pub node_labels: HashMap<String, usize>,
+    pub active_branch: String,
+    pub branch_labels: HashMap<String, usize>,
+    pub current_node: usize,
+    pub next_node_id: usize,
+    pub mode: Mode,
 }
 
 #[pymethods]

@@ -52,21 +52,20 @@ pub enum Operation {
 }
 
 pub enum ListOperation {
-    Insert { path: String, index: usize, value: PyObject },
-    Pop { path: String, index: usize, popped_value: PyObject },
-    Replace { path: String, index: usize, old_value: PyObject, new_value: PyObject },
+    Insert { path: String, index: i64, value: PyObject },
+    Pop { path: String, index: i64, popped_value: PyObject },
+    Replace { path: String, index: i64, old_value: PyObject, new_value: PyObject },
     Clear { path: String, old_values: Vec<PyObject> },
     Extend { path: String, new_values: Vec<PyObject> },
-    Remove { path: String, value: PyObject },
 }
 
 pub enum DictOperation {
+    Update { path: String, key: String, old_value: PyObject, new_value: PyObject },
+    Delete { path: String, key: String, old_value: PyObject },
     Clear { path: String, keys: Vec<String>, old_values: Vec<PyObject> },
     Pop { path: String, key: String, old_value: PyObject },
     PopItem { path: String, key: String, old_value: PyObject },
     SetDefault { path: String, key: String, value: PyObject },
-    Update { path: String, keys: Vec<String>, old_values: Vec<PyObject>, new_values: Vec<PyObject> },
-    Delete { path: String, key: String, old_value: PyObject },
 }
 
 pub struct StateNode {

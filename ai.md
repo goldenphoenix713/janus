@@ -39,9 +39,13 @@ Janus follows a strict **two-layer** architecture:
 ├──────────────────────────────────────────────────┤
 │  THE ENGINE  (Rust → PyO3)                       │
 │  src/                                            │
-│   ├── engine.rs       — TachyonEngine (DAG core) │
-│   ├── containers.rs   — (placeholder)            │
-│   └── lib.rs          — PyModule registration    │
+│   ├── lib.rs          — PyModule registration    │
+│   ├── engine.rs       — TachyonEngine (API layer)│
+│   ├── models.rs       — Core Data Structures     │
+│   ├── graph.rs        — Graph/DAG Algorithms     │
+│   ├── reconcile.rs    — Conflict Resolution      │
+│   ├── serde_py.rs     — Python Serialization     │
+│   └── containers.rs   — TrackedContainer Cores   │
 └──────────────────────────────────────────────────┘
 ```
 
@@ -49,7 +53,7 @@ Janus follows a strict **two-layer** architecture:
 
 The Python layer is user-facing. It provides:
 
-- **`base.py`**: Contains the `JanusBase` logic and the public mixins `TimelineBase` (linear) and `MultiverseBase` (branching). It intercepts `__setattr__` calls to log attribute mutations to the Rust engine and explicitly defines methods like `undo()`, `redo()`, and `branch()`.
+- **`base.py`**: Contains the `JanusBase` logic and the public mixins `TimelineBase` (linear) and `MultiverseBase` (branching). It intercepts `__setattr__` calls to log attribute mutations to the Rust engine. It provides `_adapters` for plugin lookup and `_resolve_path` for resolving object paths in Rust.
 - **`containers.py`**: Python-side proxy classes (`TrackedList`, `TrackedDict`) that subclass native `list` and `dict` respectively. Each mutating method logs the appropriate `Operation` via Rust-backed `Core` objects (`TrackedListCore`, `TrackedDictCore`). Also contains `wrap_value()` for recursive container wrapping.
 - **`registry.py`**: An `AdapterRegistry` mapping Python types to `JanusAdapter` implementations. Adapters define `get_delta`, `apply_backward`, `apply_forward`, and `get_snapshot`, allowing third-party types (e.g., `pandas.DataFrame`) to participate in state tracking via opaque delta blobs.
 - **`tachyon_rs.pyi`**: Type stubs for the Rust extension module, providing IDE autocompletion and `mypy` compatibility.
@@ -59,9 +63,13 @@ The Python layer is user-facing. It provides:
 
 The Rust layer is the performance-critical backend:
 
-- **`engine.rs`** (~800 lines): Contains the full `TachyonEngine` implementation, `TrackedListCore`, and `TrackedDictCore`. The engine maintains a **Directed Acyclic Graph (DAG)** of `StateNode` objects. Each node stores a vector of `Operation` deltas relative to its parent. Branch switching uses **Lowest Common Ancestor (LCA)** path resolution with bi-directional delta application. The `Operation` enum uses sub-enums `ListOperation` and `DictOperation` for container ops.
 - **`lib.rs`**: Registers `TachyonEngine`, `TrackedListCore`, and `TrackedDictCore` as PyO3 classes under the `tachyon_rs` Python module.
-- **`containers.rs`**: Currently a placeholder file. `TrackedListCore` and `TrackedDictCore` are implemented directly in `engine.rs`.
+- **`engine.rs`**: The main API entry point. Contains the `TachyonEngine` struct and its `#[pymethods]` implementation.
+- **`models.rs`**: Defines core enums like `Operation`, `ListOperation`, `DictOperation`, and structs like `StateNode`.
+- **`graph.rs`**: Implements DAG traversal, pathfinding, and Lowest Common Ancestor (LCA) resolution.
+- **`reconcile.rs`**: Contains the 3-way reconciliation and operation rebasing logic for containers.
+- **`serde_py.rs`**: Specialized serialization logic for converting Rust-side state to Python-ready dicts/lists.
+- **`containers.rs`**: Implements the `TrackedListCore` and `TrackedDictCore` structures that provide the back-end for Python's `TrackedList` and `TrackedDict`.
 
 ---
 
@@ -97,12 +105,14 @@ pub struct StateNode {
 
 ```rust
 pub struct TachyonEngine {
-    owner: Py<PyAny>,                       // Weak-ish reference to the decorated Python object
-    nodes: HashMap<usize, StateNode>,       // All nodes in the DAG
-    branches: HashMap<String, usize>,       // Named branch → node_id mapping
-    current_node: usize,                    // HEAD pointer
-    next_node_id: usize,                    // Monotonic ID counter
-    mode: String,                           // "linear" or "multiversal"
+    pub owner: Py<pyo3::types::PyWeakref>,
+    pub nodes: HashMap<usize, StateNode>,
+    pub node_labels: HashMap<String, usize>,
+    pub active_branch: String,
+    pub branch_labels: HashMap<String, usize>,
+    pub current_node: usize,
+    pub next_node_id: usize,
+    pub mode: Mode,
 }
 ```
 
@@ -218,9 +228,13 @@ janus/
 ├── benchmark.py                     # Standalone benchmark script
 │
 ├── src/                             # Rust source (Tachyon-RS engine)
-│   ├── lib.rs                       # PyO3 module registration
-│   ├── engine.rs                    # TachyonEngine, TrackedListCore, TrackedDictCore, Operation enum
-│   └── containers.rs                # Placeholder (containers live in engine.rs)
+│   ├── lib.rs                       # PyModule registration
+│   ├── engine.rs                    # TachyonEngine API
+│   ├── models.rs                    # Core Data Models (Operation, StateNode)
+│   ├── graph.rs                     # DAG traversal logic
+│   ├── reconcile.rs                 # Reconciliation / 3-way merge
+│   ├── serde_py.rs                  # Python serialization logic
+│   └── containers.rs                # TrackedListCore, TrackedDictCore
 │
 ├── janus/                           # Python source (public API)
 │   ├── __init__.py                  # Exports: Base Classes, register_adapter
@@ -528,9 +542,9 @@ Verified benchmarks show **~27,000× speedup** over `copy.deepcopy()` for object
 | :--- | :--- | :--- |
 | **P1 — Linear Foundation** | **100%** | — (complete: undo/redo, overwrite-future, linear guards) |
 | **P2 — Multiversal Branching** | **100%** | — (complete: DAG, branching, deletion, listing, moments) |
-| **P3 — Plugins & Containers** | **~95%** | `TrackedList`/`TrackedDict` fully implemented; pandas & numpy adapters complete |
+| **P3 — Plugins & Containers** | **100%** | `TrackedList`/`TrackedDict` fully implemented; pandas & numpy adapters complete |
 | **P4 — Timeline & Flattening** | ~40% | No history squash, no filtering, no timeline diff |
-| **P5 — Tombstone & Memory** | 0% | No weak refs, no pruning, no memory benchmarks |
+| **P5 — Tombstone & Memory** | **80%** | WeakRef-based memory safety implemented; needs more pruning strategies |
 
 ### 11.2 Completed Milestones
 
@@ -541,6 +555,8 @@ Verified benchmarks show **~27,000× speedup** over `copy.deepcopy()` for object
 - **Pandas & NumPy Integration**: `TrackedDataFrame`, `TrackedSeries`, and `TrackedNumpyArray` are fully operational with undo/redo and branching.
 - **Branch Management**: Methods for listing (`list_branches`) and deleting (`delete_branch`) branches are complete.
 - **Strict Type Checking**: `mypy` runs in `strict` mode; all source and test files have comprehensive type annotations.
+- **Modular Engine Architecture**: The Rust engine has been refactored into specialized modules (`models`, `graph`, `reconcile`, `serde_py`, `containers`) for better maintainability.
+- **PyO3 0.23 Migration**: The codebase has been fully updated to the latest PyO3 stable version, utilizing `Bound` handles and the new ownership model.
 
 ---
 
