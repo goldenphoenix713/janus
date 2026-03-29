@@ -1,4 +1,5 @@
 import time
+from typing import Any
 
 from janus import MultiverseBase, TimelineBase
 
@@ -88,3 +89,51 @@ def test_pruning_performance() -> None:
     # Even with pruning, it should stay well under 1ms for simple cases.
     assert avg_latency < 0.001
     assert max_latency < 0.05
+
+
+def test_bench_mutation(benchmark: Any) -> None:
+    class State(TimelineBase):
+        def __init__(self) -> None:
+            super().__init__()
+            self.x = 0
+
+    obj = State()
+
+    def do_mutate() -> None:
+        obj.x = 1
+
+    benchmark(do_mutate)
+
+
+def test_bench_branching(benchmark: Any) -> None:
+    class State(MultiverseBase):
+        def __init__(self) -> None:
+            super().__init__()
+            self.x = 0
+
+    obj = State()
+    obj.x = 1
+    branch_count = 0
+
+    def do_branch() -> None:
+        nonlocal branch_count
+        branch_count += 1
+        obj.branch(f"branch_{branch_count}")
+
+    benchmark(do_branch)
+
+
+def test_bench_timeline_extraction(benchmark: Any) -> None:
+    class State(MultiverseBase):
+        def __init__(self) -> None:
+            super().__init__()
+            self.x = 0
+
+    obj = State()
+    for i in range(100):
+        obj.x = i
+
+    def do_extract() -> None:
+        obj.extract_timeline()
+
+    benchmark(do_extract)

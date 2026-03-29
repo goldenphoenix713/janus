@@ -37,6 +37,7 @@ docs = [
 
 test = [
     "pytest>=7.0",
+    "pytest-benchmark>=5.2.3",
     "pytest-cov>=5.0.0",
 ]
 
