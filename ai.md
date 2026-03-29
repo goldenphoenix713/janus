@@ -497,7 +497,7 @@ class MyMultiverseObj(MultiverseBase):
 | `get_labeled_moments()` | Both modes | List all available moment labels |
 | `branch(label)` | Multiversal only | Create a named branch at the current state node |
 | `create_branch(label)` | Multiversal only | Alias for `branch()` |
-| `swich_branch(label)` | Multiversal only | Switch to a different branch |
+| `switch_branch(label)` | Multiversal only | Switch to a different branch |
 | `list_branches()` | Multiversal only | List all branch names |
 | `delete_branch(label)` | Multiversal only | Delete a branch (cannot delete the active branch) |
 | `current_branch` | Multiversal only | Property returning the active branch name |
