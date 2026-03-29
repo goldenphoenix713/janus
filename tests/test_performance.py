@@ -1,75 +1,101 @@
-import statistics
 import time
 
-from janus import MultiverseBase
+from janus import MultiverseBase, TimelineBase
 
 
-class BenchTarget(MultiverseBase):
-    def __init__(self) -> None:
-        self.val = 0
+def test_mutation_o1_scaling() -> None:
+    """Verify that mutation logging (setattr) is O(1) relative to history depth."""
+
+    class State(TimelineBase):
+        def __init__(self) -> None:
+            super().__init__(max_history=100_000)
+            self.x = 0
+
+    obj = State()
+
+    # 1. Measure latency at small history
+    start_early = time.perf_counter()
+    for i in range(100):
+        obj.x = i
+    end_early = time.perf_counter()
+    duration_early = (end_early - start_early) / 100
+
+    # 2. Grow history significantly
+    for i in range(100, 10_000):
+        obj.x = i
+
+    # 3. Measure latency at large history
+    start_late = time.perf_counter()
+    for i in range(10_000, 10_100):
+        obj.x = i
+    end_late = time.perf_counter()
+    duration_late = (end_late - start_late) / 100
+
+    # O(1) Assertion: Latency should not have exploded.
+    # We allow a small margin for cache effects, but it shouldn't be 10x slower.
+    print(f"Early latency: {duration_early:.8f}s, Late latency: {duration_late:.8f}s")
+    assert duration_late < duration_early * 5, (
+        f"Mutation latency scaled linearly! {duration_late} vs {duration_early}"
+    )
 
 
-def benchmark_logging(depth_steps: list[int] | None = None) -> None:
-    if depth_steps is None:
-        depth_steps = [1000, 10000, 50000, 100000]
+def test_branching_o1_scaling() -> None:
+    """Verify that branching is efficient relative to history depth."""
 
-    obj = BenchTarget()
-    results: dict[int, float] = {}
+    class State(MultiverseBase):
+        def __init__(self) -> None:
+            super().__init__(max_history=100_000)
+            self.x = 0
 
-    print(f"{'Depth':>10} | {'Mean Latency (ns)':>20} | {'Std Dev':>10}")
-    print("-" * 50)
+    obj = State()
 
-    current_depth = 0
-    for target_depth in depth_steps:
-        latencies: list[int] = []
-        to_add = target_depth - current_depth
+    # 1. Initial branch
+    start_early = time.perf_counter()
+    obj.branch("early_branch")
+    end_early = time.perf_counter()
+    duration_early = end_early - start_early
 
-        for _ in range(to_add):
-            start = time.perf_counter_ns()
-            obj.val += 1
-            end = time.perf_counter_ns()
-            latencies.append(end - start)
+    # 2. Grow history
+    for i in range(10_000):
+        obj.x = i
 
-        mean_lat = statistics.mean(latencies)
-        std_dev = statistics.stdev(latencies)
-        results[target_depth] = mean_lat
-        current_depth = target_depth
+    # 3. Branch again
+    start_late = time.perf_counter()
+    obj.branch("late_branch")
+    end_late = time.perf_counter()
+    duration_late = end_late - start_late
 
-        print(f"{target_depth:>10} | {mean_lat:>20.2f} | {std_dev:>10.2f}")
-
-    # Simple O(1) verify: check if 100k is significantly slower than 1k
-    ratio = results[depth_steps[-1]] / results[depth_steps[0]]
-    print(f"\nLatency Ratio (100k/1k): {ratio:.2f}x")
-    if ratio < 1.5:
-        print(
-            "O(1) Verification Passed: Logging latency is independent of history depth."
-        )
-        print(
-            "O(1) Verification Warning: Logging latency may be increasing with "
-            "history depth."
-        )
+    print(
+        f"Early branch latency: {duration_early:.8f}s, "
+        f"Late branch latency: {duration_late:.8f}s"
+    )
+    # Branching should still be extremely fast.
+    assert duration_late < 0.01, f"Branching too slow: {duration_late}s"
 
 
-def benchmark_restoration(distance: int = 10000, total_depth: int = 50000) -> None:
-    obj = BenchTarget()
-    # Build history
-    obj.branch("root")
-    for _ in range(total_depth):
-        obj.val += 1
+def test_pruning_performance() -> None:
+    """Verify that automated pruning doesn't cause a spike in mutation latency."""
 
-    obj.branch("deep_end")
+    class State(TimelineBase):
+        def __init__(self) -> None:
+            # Small max_history triggers frequent pruning
+            super().__init__(max_history=100)
+            self.x = 0
 
-    # Measure restoration
-    start = time.perf_counter()
-    obj.switch_branch("root")
-    end = time.perf_counter()
+    obj = State()
 
-    print(f"\nRestoration Time ({total_depth} nodes back to root): {end - start:.4f}s")
-    print(f"Time per node restoration: {(end - start) / total_depth * 1_000_000:.2f}μs")
+    latencies = []
+    for i in range(1000):
+        start = time.perf_counter()
+        obj.x = i
+        latencies.append(time.perf_counter() - start)
 
+    avg_latency = sum(latencies) / len(latencies)
+    max_latency = max(latencies)
 
-if __name__ == "__main__":
-    print("--- Janus O(1) Logging Benchmark ---\n")
-    benchmark_logging()
-    print("\n--- Janus Restoration Benchmark ---")
-    benchmark_restoration()
+    print(
+        f"Avg latency with pruning: {avg_latency:.8f}s, Max latency: {max_latency:.8f}s"
+    )
+    # Even with pruning, it should stay well under 1ms for simple cases.
+    assert avg_latency < 0.001
+    assert max_latency < 0.05

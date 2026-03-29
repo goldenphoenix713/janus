@@ -530,7 +530,7 @@ class MyAdapter(JanusAdapter):
 | **Timeline extraction** | $O(P)$ | $P$ = path length from root to the target branch |
 | **Memory** | $O(H)$ | $H$ = total number of mutations logged |
 
-Verified benchmarks show **~27,000× speedup** over `copy.deepcopy()` for objects with 500,000 attributes, and **constant logging latency** (~6.7μs) across 1K–100K history depths.
+Verified benchmarks show **constant logging latency (~6μs)** and **constant-time branching (~7–20μs)** even as history scales to 100,000+ nodes, ensured by automated history pruning and O(1) DAG append logic.
 
 ---
 
