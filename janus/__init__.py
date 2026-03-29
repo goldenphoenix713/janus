@@ -25,3 +25,5 @@ __all__ = [
     "pandas",
     "numpy",
 ]
+
+__version__ = "0.2.0"
