@@ -57,10 +57,11 @@ pub enum ListOperation {
     Replace { path: String, index: i64, old_value: PyObject, new_value: PyObject },
     Clear { path: String, old_values: Vec<PyObject> },
     Extend { path: String, new_values: Vec<PyObject> },
+    Remove { path: String, value: PyObject },
 }
 
 pub enum DictOperation {
-    Update { path: String, key: String, old_value: PyObject, new_value: PyObject },
+    Update { path: String, keys: Vec<String>, old_values: Vec<PyObject>, new_values: Vec<PyObject> },
     Delete { path: String, key: String, old_value: PyObject },
     Clear { path: String, keys: Vec<String>, old_values: Vec<PyObject> },
     Pop { path: String, key: String, old_value: PyObject },
@@ -89,7 +90,7 @@ To prevent history logs from causing memory leaks, Tachyon-RS employs a **Hybrid
 
 | Operation | Complexity | Description |
 | :--- | :--- | :--- |
-| **Mutation** | $O(1)$ | Appending a delta to the current edge. |
+| **Mutation** | $O(1)$ | Appending a delta to the Direct Acyclic Graph. |
 | **Branch** | $O(1)$ | Creating a new pointer to the current node. |
 | **Switch** | $O(D)$ | $D$ is the distance to the LCA + distance to target. |
 | **Merge** | $O(K)$ | $K$ is the number of deltas since the LCA. |

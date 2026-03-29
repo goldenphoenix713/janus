@@ -53,7 +53,7 @@ Janus follows a strict **two-layer** architecture:
 
 The Python layer is user-facing. It provides:
 
-- **`base.py`**: Contains the `JanusBase` logic and the public mixins `TimelineBase` (linear) and `MultiverseBase` (branching). It intercepts `__setattr__` calls to log attribute mutations to the Rust engine. It provides `_adapters` for plugin lookup and `_resolve_path` for resolving object paths in Rust.
+- **`base.py`**: Contains the `JanusBase` logic and the public mixins `TimelineBase` (linear) and `MultiverseBase` (branching). It intercepts `__setattr__` calls to log attribute mutations to the Rust engine. It provides `_adapters` for plugin lookup, `_resolve_path` for resolving object paths in Rust, and manages history pruning via `max_history`.
 - **`containers.py`**: Python-side proxy classes (`TrackedList`, `TrackedDict`) that subclass native `list` and `dict` respectively. Each mutating method logs the appropriate `Operation` via Rust-backed `Core` objects (`TrackedListCore`, `TrackedDictCore`). Also contains `wrap_value()` for recursive container wrapping.
 - **`registry.py`**: An `AdapterRegistry` mapping Python types to `JanusAdapter` implementations. Adapters define `get_delta`, `apply_backward`, `apply_forward`, and `get_snapshot`, allowing third-party types (e.g., `pandas.DataFrame`) to participate in state tracking via opaque delta blobs.
 - **`tachyon_rs.pyi`**: Type stubs for the Rust extension module, providing IDE autocompletion and `mypy` compatibility.
@@ -113,6 +113,7 @@ pub struct TachyonEngine {
     pub current_node: usize,
     pub next_node_id: usize,
     pub mode: Mode,
+    pub max_history: Option<usize>,
 }
 ```
 
@@ -496,11 +497,14 @@ class MyMultiverseObj(MultiverseBase):
 | `get_labeled_moments()` | Both modes | List all available moment labels |
 | `branch(label)` | Multiversal only | Create a named branch at the current state node |
 | `create_branch(label)` | Multiversal only | Alias for `branch()` |
-| `switch_branch(label)` | Multiversal only | Switch to a different branch |
+| `swich_branch(label)` | Multiversal only | Switch to a different branch |
 | `list_branches()` | Multiversal only | List all branch names |
 | `delete_branch(label)` | Multiversal only | Delete a branch (cannot delete the active branch) |
 | `current_branch` | Multiversal only | Property returning the active branch name |
 | `extract_timeline(label)` | Multiversal only | Returns a list of operation dicts from root to the named branch |
+| `merge(label, strategy)` | Multiversal only | 3-way merge of a branch into current. Supports `overshadow`, `preserve`, `strict`, or a custom `Callable`. |
+| `prune()` | Both modes | Manually trigger DAG pruning to `max_history` depth. |
+| `max_history` | Both modes | Property/Setter to configure the maximum retained history depth. |
 
 ### 9.3 Plugin Registration
 
@@ -545,6 +549,8 @@ Verified benchmarks show **constant logging latency (~6μs)** and **constant-tim
 | **P3 — Plugins & Containers** | **100%** | `TrackedList`/`TrackedDict` fully implemented; pandas & numpy adapters complete |
 | **P4 — Timeline & Flattening** | **100%** | — (complete: timeline extraction, filtering, Squash/Flatten, and get_diff) |
 | **P5 — Tombstone & Memory** | **100%** | — (complete: WeakRef-based safety, Tombstone raising, and history pruning with delta-merging) |
+| **P6 — Custom Merging** | **100%** | — (complete: `Union[str, Callable]` strategies for attribute and dictionary conflicts) |
+| **P12 — Modular Engine** | **100%** | — (complete: Separation of `graph.rs`, `reconcile.rs`, `serde_py.rs`, and `models.rs`) |
 
 ### 11.2 Completed Milestones
 

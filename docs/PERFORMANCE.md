@@ -24,6 +24,28 @@ The complexity of state restoration is $O(D)$, where $D$ is the path distance in
 
 ---
 
+## 🛡️ Performance Guarantees (Phase 5.3 Audit)
+
+A comprehensive performance audit (`tests/test_performance.py`) has verified the following guarantees:
+
+### 1. Constant-Time Mutation Logging
+
+Any mutation (`UpdateAttr`, `ListInsert`, etc.) is logged in **$O(1)$** time. This is enforced by an automated audit that asserts a ratio $< 1.5$ between logging at 100 nodes vs 10,000 nodes.
+
+- **Verified Latency**: ~6.5μs per mutation.
+
+### 2. Constant-Time Branching
+
+Creating a new branch is a metadata operation that executes in **$O(1)$** time, independent of history depth.
+
+- **Verified Latency**: ~12μs per branch.
+
+### 3. Sustainable Memory via Pruning
+
+With the introduction of `max_history`, Janus now maintains constant memory usage for long-running processes by pruning unreachable DAG nodes.
+
+---
+
 ## 📊 Benchmark Data
 
 Benchmarks were conducted on a machine with a 3.12 Python environment and an optimized Rust extension.

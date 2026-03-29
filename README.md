@@ -100,6 +100,28 @@ Janus supports **intelligent 3-way reconciliation** for native Python lists and 
 
 - **List Index Shifting**: If two branches insert items at different indices, Janus automatically shifts indices to preserve intent.
 - **Conflict Detection**: Detects and resolves parallel edits to the same dictionary keys or list positions according to configurable strategies (`strict`, `overshadow`, `preserve`).
+- **Custom Callbacks**: Provide a custom Python function to resolve conflicts with domain-specific logic (e.g., averaging numeric values).
+
+```python
+def average_strategy(name, base, source, target):
+    if isinstance(source, (int, float)):
+        return (source + target) / 2
+    return source  # Default to source for other types
+
+sim.merge("feature", strategy=average_strategy)
+```
+
+## 🧹 History Management
+
+To maintain peak performance in long-running simulations, Janus supports **automated history pruning**. You can limit the depth of the state DAG to keep memory and traversal costs constant:
+
+```python
+# Keep only the last 1,000 mutations
+sim.max_history = 1000
+
+# Or manually trigger a prune
+sim.prune()
+```
 
 ## 🏗️ Architectural Pillars
 
