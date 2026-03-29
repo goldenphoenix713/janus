@@ -242,6 +242,36 @@ class JanusBase:
             raise KeyError(f"Label '{label}' not found in timeline or multiverse")
         return node_id
 
+    def squash(
+        self, start_label: str | None = None, end_label: str | None = None
+    ) -> None:
+        """
+        Collapse state nodes into a single node.
+
+        Usage:
+        - obj.squash(start, end): Collapses nodes between start and end.
+        - obj.squash(label): Collapses the entire branch up to label.
+        - obj.squash(): Collapses the current branch up to current node.
+        """
+        if end_label is not None:
+            if start_label is None:
+                raise ValueError("start_label required for range squash")
+            self._engine.squash(start_label, end_label)
+        else:
+            # Re-use engine's branch-based squashing logic
+            self._engine.squash_branch(start_label)
+
+    def flatten(self, label: str | None = None) -> None:
+        """Alias for squash()."""
+        self.squash(label)
+
+    def diff(self, start_label: str, end_label: str) -> dict[str, Any]:
+        """
+        Compare the state between two moments (labels).
+        Returns a dictionary with 'attributes' and 'container_operations'.
+        """
+        return self._engine.get_diff(start_label, end_label)
+
     def save(self, path: str | Path) -> None:
         """
         Persist the entire multiverse/timeline history to a .jns file.
@@ -409,17 +439,6 @@ class MultiverseBase(JanusBase):
                 results.append(node_id)
 
         return results
-
-    def squash(self, label: str | None = None) -> None:
-        """
-        Collapse a sequence of state nodes into a single composite node.
-        Optimizes memory and simplifies the timeline.
-        """
-        self._engine.squash_branch(label)
-
-    def flatten(self, label: str | None = None) -> None:
-        """Alias for squash()."""
-        self.squash(label)
 
     def delete_branch(self, label: str) -> None:
         self._engine.delete_branch(label)

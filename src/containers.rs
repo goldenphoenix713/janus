@@ -14,7 +14,7 @@ impl TrackedListCore {
         TrackedListCore { engine, name }
     }
 
-    pub fn log_insert(&self, py: Python, index: usize, value: PyObject) -> PyResult<()> {
+    pub fn log_insert(&self, py: Python, index: i64, value: PyObject) -> PyResult<()> {
         if let Ok(mut engine) = self.engine.try_borrow_mut(py) {
             // Note: We don't check _restoring here because the Python side
             // will check its own _silent flag which handles both restoration
@@ -24,7 +24,7 @@ impl TrackedListCore {
         Ok(())
     }
 
-    pub fn log_pop(&self, py: Python, index: usize, value: PyObject) -> PyResult<()> {
+    pub fn log_pop(&self, py: Python, index: i64, value: PyObject) -> PyResult<()> {
         if let Ok(mut engine) = self.engine.try_borrow_mut(py) {
             engine.log_list_pop(self.name.clone(), index, value);
         }
@@ -34,7 +34,7 @@ impl TrackedListCore {
     pub fn log_replace(
         &self,
         py: Python,
-        index: usize,
+        index: i64,
         old_value: PyObject,
         new_value: PyObject,
     ) -> PyResult<()> {

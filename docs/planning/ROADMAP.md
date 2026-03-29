@@ -42,9 +42,9 @@ This roadmap outlines the path to a full implementation of the **Janus** archite
 
 *Goal: Enable path traversal and event history review.*
 
-- **4.1 Path Traversal**: Implement `extract_timeline(label)` to return the reverse-walk from leaf to root.
-- **4.2 History Flattening**: Ability to squash a multiversal branch into a linear sequence of events.
-- **⏱️ ETA: 2 Weeks**
+- **4.1 Path Traversal**: Implement `extract_timeline(label)` to return the reverse-walk from leaf to root. ✅
+- **4.2 History Flattening**: Ability to squash a multiversal branch into a linear sequence of events. ✅
+- **✅ Complete**
 
 ---
 

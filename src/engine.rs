@@ -54,6 +54,35 @@ impl Operation {
         }
     }
 
+    pub fn invert(&self, py: Python) -> Self {
+        match self {
+            Operation::UpdateAttr {
+                name,
+                old_value,
+                new_value,
+            } => Operation::UpdateAttr {
+                name: name.clone(),
+                old_value: new_value.clone_ref(py),
+                new_value: old_value.clone_ref(py),
+            },
+            Operation::ListOp(lo) => Operation::ListOp(lo.invert(py)),
+            Operation::DictOp(do_op) => Operation::DictOp(do_op.invert(py)),
+            Operation::PluginOp {
+                path,
+                adapter_name,
+                delta_blob,
+            } => {
+                // Plugin inversion is complex and requires Python-side adapter support.
+                // For diffing, we might just show the delta blob as-is but marked as "reversed".
+                Operation::PluginOp {
+                    path: path.clone(),
+                    adapter_name: adapter_name.clone(),
+                    delta_blob: delta_blob.clone_ref(py),
+                }
+            }
+        }
+    }
+
     pub fn to_object(&self, py: Python) -> PyResult<PyObject> {
         let mut dict = HashMap::<&str, PyObject>::new();
         match self {
@@ -140,17 +169,17 @@ impl Operation {
 pub enum ListOperation {
     Insert {
         path: String,
-        index: usize,
+        index: i64,
         value: PyObject,
     },
     Pop {
         path: String,
-        index: usize,
+        index: i64,
         popped_value: PyObject,
     },
     Replace {
         path: String,
-        index: usize,
+        index: i64,
         old_value: PyObject,
         new_value: PyObject,
     },
@@ -222,6 +251,49 @@ impl ListOperation {
         }
     }
 
+    pub fn invert(&self, py: Python) -> Self {
+        match self {
+            ListOperation::Insert { path, index, value } => ListOperation::Pop {
+                path: path.clone(),
+                index: *index,
+                popped_value: value.clone_ref(py),
+            },
+            ListOperation::Pop {
+                path,
+                index,
+                popped_value,
+            } => ListOperation::Insert {
+                path: path.clone(),
+                index: *index,
+                value: popped_value.clone_ref(py),
+            },
+            ListOperation::Replace {
+                path,
+                index,
+                old_value,
+                new_value,
+            } => ListOperation::Replace {
+                path: path.clone(),
+                index: *index,
+                old_value: new_value.clone_ref(py),
+                new_value: old_value.clone_ref(py),
+            },
+            ListOperation::Clear { path, old_values } => ListOperation::Extend {
+                path: path.clone(),
+                new_values: old_values.iter().map(|v| v.clone_ref(py)).collect(),
+            },
+            ListOperation::Extend { path, new_values } => ListOperation::Clear {
+                path: path.clone(),
+                old_values: new_values.iter().map(|v| v.clone_ref(py)).collect(),
+            },
+            ListOperation::Remove { path, value } => ListOperation::Insert {
+                path: path.clone(),
+                index: -1,
+                value: value.clone_ref(py),
+            },
+        }
+    }
+
     pub fn to_object(&self, py: Python) -> PyResult<PyObject> {
         let mut dict = HashMap::<&str, PyObject>::new();
         match self {
@@ -283,12 +355,12 @@ impl ListOperation {
 
         match op_type.as_str() {
             "insert" => {
-                let index: usize = dict.get_item("index")?.unwrap().extract()?;
+                let index: i64 = dict.get_item("index")?.unwrap().extract()?;
                 let value = dict.get_item("value")?.unwrap().unbind();
                 Ok(ListOperation::Insert { path, index, value })
             }
             "pop" => {
-                let index: usize = dict.get_item("index")?.unwrap().extract()?;
+                let index: i64 = dict.get_item("index")?.unwrap().extract()?;
                 let popped_value = dict.get_item("popped_value")?.unwrap().unbind();
                 Ok(ListOperation::Pop {
                     path,
@@ -297,7 +369,7 @@ impl ListOperation {
                 })
             }
             "replace" => {
-                let index: usize = dict.get_item("index")?.unwrap().extract()?;
+                let index: i64 = dict.get_item("index")?.unwrap().extract()?;
                 let old_value = dict.get_item("old_value")?.unwrap().unbind();
                 let new_value = dict.get_item("new_value")?.unwrap().unbind();
                 Ok(ListOperation::Replace {
@@ -427,6 +499,57 @@ impl DictOperation {
                 path: path.clone(),
                 key: key.clone(),
                 old_value: old_value.clone_ref(py),
+            },
+        }
+    }
+
+    pub fn invert(&self, py: Python) -> Self {
+        match self {
+            DictOperation::Update {
+                path,
+                keys,
+                old_values,
+                new_values,
+            } => DictOperation::Update {
+                path: path.clone(),
+                keys: keys.clone(),
+                old_values: new_values.iter().map(|v| v.clone_ref(py)).collect(),
+                new_values: old_values.iter().map(|v| v.clone_ref(py)).collect(),
+            },
+            DictOperation::Pop {
+                path,
+                key,
+                old_value,
+            }
+            | DictOperation::PopItem {
+                path,
+                key,
+                old_value,
+            }
+            | DictOperation::Delete {
+                path,
+                key,
+                old_value,
+            } => DictOperation::Update {
+                path: path.clone(),
+                keys: vec![key.clone()],
+                old_values: vec![py.None()],
+                new_values: vec![old_value.clone_ref(py)],
+            },
+            DictOperation::SetDefault { path, key, value } => DictOperation::Delete {
+                path: path.clone(),
+                key: key.clone(),
+                old_value: value.clone_ref(py),
+            },
+            DictOperation::Clear {
+                path,
+                keys,
+                old_values,
+            } => DictOperation::Update {
+                path: path.clone(),
+                keys: keys.clone(),
+                old_values: (0..keys.len()).map(|_| py.None()).collect(),
+                new_values: old_values.iter().map(|v| v.clone_ref(py)).collect(),
             },
         }
     }
@@ -1397,9 +1520,27 @@ impl TachyonEngine {
 #[pymethods]
 impl TachyonEngine {
     pub fn redo(&mut self, py: Python) -> PyResult<()> {
+        // 1. Try sequential ID (Linear optimization)
         if let Some(node) = self.nodes.get(&(self.current_node + 1)) {
-            self.move_to_node_id(py, node.id)?;
+            if node.parents.contains(&self.current_node) {
+                self.move_to_node_id(py, node.id)?;
+                return Ok(());
+            }
         }
+
+        // 2. Fallback: Search for any child of the current node
+        let mut child_id = None;
+        for node in self.nodes.values() {
+            if node.parents.contains(&self.current_node) {
+                child_id = Some(node.id);
+                break; // In basic redo, we take the first available path
+            }
+        }
+
+        if let Some(id) = child_id {
+            self.move_to_node_id(py, id)?;
+        }
+
         Ok(())
     }
 
@@ -1766,7 +1907,7 @@ impl TachyonEngine {
         Ok(timeline)
     }
 
-    pub fn log_list_pop(&mut self, path: String, index: usize, popped_value: PyObject) {
+    pub fn log_list_pop(&mut self, path: String, index: i64, popped_value: PyObject) {
         let op = Operation::ListOp(ListOperation::Pop {
             path,
             index,
@@ -1775,7 +1916,7 @@ impl TachyonEngine {
         self.append_node(vec![op]);
     }
 
-    pub fn log_list_insert(&mut self, path: String, index: usize, value: PyObject) {
+    pub fn log_list_insert(&mut self, path: String, index: i64, value: PyObject) {
         let op = Operation::ListOp(ListOperation::Insert { path, index, value });
         self.append_node(vec![op]);
     }
@@ -1783,7 +1924,7 @@ impl TachyonEngine {
     pub fn log_list_replace(
         &mut self,
         path: String,
-        index: usize,
+        index: i64,
         old_val: PyObject,
         new_val: PyObject,
     ) {
@@ -1884,6 +2025,264 @@ impl TachyonEngine {
         }
 
         Ok(())
+    }
+
+    pub fn squash(&mut self, py: Python, start_label: String, end_label: String) -> PyResult<()> {
+        let start_id = *self.node_labels.get(&start_label).ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                "Label '{}' not found",
+                start_label
+            ))
+        })?;
+        let end_id = *self.node_labels.get(&end_label).ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                "Label '{}' not found",
+                end_label
+            ))
+        })?;
+
+        // 1. Traverse and collect chain from end_id back to start_id
+        let mut chain = Vec::new();
+        let mut curr = end_id;
+        while curr != start_id {
+            chain.push(curr);
+            let node = self.nodes.get(&curr).ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("Inconsistent DAG")
+            })?;
+            if node.parents.len() != 1 {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "Cannot squash across merge or branch nodes",
+                ));
+            }
+            curr = node.parents[0];
+            if curr == 0 && start_id != 0 {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "Start label is not an ancestor of end label",
+                ));
+            }
+        }
+        chain.push(start_id);
+        chain.reverse(); // Now [start, ..., end]
+
+        // 2. Collect all operations
+        let mut all_deltas = Vec::new();
+        for &id in &chain {
+            if let Some(node) = self.nodes.get(&id) {
+                for op in &node.deltas {
+                    all_deltas.push(op.clone_ref(py));
+                }
+            }
+        }
+
+        // 3. Simple Operation Collapsing for UpdateAttr
+        let mut collapsed_ops = Vec::new();
+        let mut attr_first_old: HashMap<String, PyObject> = HashMap::new();
+        let mut attr_last_new: HashMap<String, PyObject> = HashMap::new();
+
+        for op in all_deltas {
+            match op {
+                Operation::UpdateAttr {
+                    name,
+                    old_value,
+                    new_value,
+                } => {
+                    if !attr_first_old.contains_key(&name) {
+                        attr_first_old.insert(name.clone(), old_value);
+                    }
+                    attr_last_new.insert(name, new_value);
+                }
+                _ => {
+                    // Flush accumulated attr updates to preserve interleaving with complex ops
+                    for (name, first_old) in attr_first_old.drain() {
+                        let last_new = attr_last_new.remove(&name).unwrap();
+                        collapsed_ops.push(Operation::UpdateAttr {
+                            name,
+                            old_value: first_old,
+                            new_value: last_new,
+                        });
+                    }
+                    collapsed_ops.push(op);
+                }
+            }
+        }
+        // Final flush
+        for (name, first_old) in attr_first_old.drain() {
+            let last_new = attr_last_new.remove(&name).unwrap();
+            collapsed_ops.push(Operation::UpdateAttr {
+                name,
+                old_value: first_old,
+                new_value: last_new,
+            });
+        }
+
+        // 4. Update Topology
+        let start_node = self.nodes.get(&start_id).unwrap();
+        let parents = start_node.parents.clone();
+        let timestamp = self.nodes.get(&end_id).unwrap().timestamp;
+
+        let new_id = self.next_node_id;
+        self.next_node_id += 1;
+
+        // Find all children of end_id to redirect them
+        let mut children = Vec::new();
+        for node in self.nodes.values() {
+            if node.parents.contains(&end_id) {
+                children.push(node.id);
+            }
+        }
+
+        // Create the composite node
+        let new_node = StateNode {
+            id: new_id,
+            parents,
+            deltas: collapsed_ops,
+            metadata: HashMap::new(),
+            timestamp,
+        };
+
+        // 5. Atomic Re-linking
+        for child_id in children {
+            let child = self.nodes.get_mut(&child_id).unwrap();
+            for p in &mut child.parents {
+                if *p == end_id {
+                    *p = new_id;
+                }
+            }
+        }
+
+        // Migrate all labels and branches that pointed to any node in the squashed chain
+        let chain_ids: std::collections::HashSet<usize> = chain.iter().cloned().collect();
+
+        // Node labels
+        let labels_to_migrate: Vec<String> = self
+            .node_labels
+            .iter()
+            .filter(|(_, &id)| chain_ids.contains(&id))
+            .map(|(k, _)| k.clone())
+            .collect();
+        for label in labels_to_migrate {
+            self.node_labels.insert(label, new_id);
+        }
+
+        // Branch labels
+        let branches_to_migrate: Vec<String> = self
+            .branch_labels
+            .iter()
+            .filter(|(_, &id)| chain_ids.contains(&id))
+            .map(|(k, _)| k.clone())
+            .collect();
+        for branch in branches_to_migrate {
+            self.branch_labels.insert(branch, new_id);
+        }
+
+        // Current node pointer
+        if chain_ids.contains(&self.current_node) {
+            self.current_node = new_id;
+        }
+
+        // 6. Cleanup old nodes
+        for id in chain {
+            if id != 0 {
+                // Keep genesis node 0 if it was part of the chain (though it shouldn't be removable)
+                self.nodes.remove(&id);
+            } else {
+                // If ID is 0, we can't remove it, but we can't really squash "into" it
+                // because it has no parent. Our logic handles it by having parent=[] for new_node.
+                // But node 0 is special. Let's just avoid removing it.
+                // If start_id was 0, it was part of the chain, but we'll leave node 0 as is
+                // and just have the new node be a root too.
+                // Actually, if start_id was 0, node labels like "__genesis__" now point to new_id.
+                // This is fine.
+            }
+        }
+
+        self.nodes.insert(new_id, new_node);
+
+        Ok(())
+    }
+
+    #[pyo3(signature = (start_label, end_label))]
+    pub fn get_diff(
+        &mut self,
+        py: Python,
+        start_label: String,
+        end_label: String,
+    ) -> PyResult<PyObject> {
+        let start_id = *self.node_labels.get(&start_label).ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                "Label '{}' not found",
+                start_label
+            ))
+        })?;
+        let end_id = *self.node_labels.get(&end_label).ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                "Label '{}' not found",
+                end_label
+            ))
+        })?;
+
+        let (path_up, path_down) = self.get_shortest_path(start_id, end_id);
+
+        let mut all_deltas = Vec::new();
+
+        // 1. Collect and INVERT operations on the way UP to LCA
+        for nid in path_up {
+            if let Some(node) = self.nodes.get(&nid) {
+                for op in node.deltas.iter().rev() {
+                    all_deltas.push(op.invert(py));
+                }
+            }
+        }
+
+        // 2. Collect operations on the way DOWN from LCA to target
+        for nid in path_down {
+            if let Some(node) = self.nodes.get(&nid) {
+                for op in &node.deltas {
+                    all_deltas.push(op.clone_ref(py));
+                }
+            }
+        }
+
+        // 3. Collapse deltas to a summary of changes
+        let mut attr_diff: HashMap<String, (PyObject, PyObject)> = HashMap::new();
+        let mut container_ops: Vec<PyObject> = Vec::new();
+
+        for op in all_deltas {
+            match op {
+                Operation::UpdateAttr {
+                    name,
+                    old_value,
+                    new_value,
+                } => {
+                    if let Some(existing) = attr_diff.get_mut(&name) {
+                        existing.1 = new_value;
+                    } else {
+                        attr_diff.insert(name, (old_value, new_value));
+                    }
+                }
+                _ => {
+                    // For lists/dicts, we collect the full sequence for now
+                    container_ops.push(op.to_object(py)?);
+                }
+            }
+        }
+
+        let result = PyDict::new(py);
+
+        // 4. Format attribute diffs
+        let attrs = PyDict::new(py);
+        for (name, (old, new)) in attr_diff {
+            let pair = PyDict::new(py);
+            pair.set_item("old", old)?;
+            pair.set_item("new", new)?;
+            attrs.set_item(name, pair)?;
+        }
+        result.set_item("attributes", attrs)?;
+
+        // 5. Format container ops
+        result.set_item("container_operations", container_ops)?;
+
+        Ok(result.into())
     }
 }
 
