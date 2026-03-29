@@ -87,6 +87,7 @@ warn_unused_configs = true
 strict = true
 
 [tool.pytest.ini_options]
+addopts = "--cov=janus --cov-report=term-missing --cov-fail-under=90"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]

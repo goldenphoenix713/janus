@@ -107,3 +107,31 @@ def test_container_persistence(tmp_path: Path) -> None:
     new_obj.jump_to("init")
     assert len(new_obj.data) == 3  # type: ignore[attr-defined]
     assert "b" not in new_obj.info  # type: ignore[attr-defined]
+
+
+def test_pandas_persistence(tmp_path: Path) -> None:
+    try:
+        import pandas as pd
+    except ImportError:
+        return
+
+    save_path = tmp_path / "test_pandas.jns"
+    obj = SimpleObj()
+    obj.df = pd.DataFrame({"A": [1, 2]})
+    obj.s = pd.Series([3, 4], name="my_series")
+
+    obj.label_node("v1")
+    obj.df.loc[0, "A"] = 10  # type: ignore[attr-defined]
+    obj.s.iloc[0] = 30  # type: ignore[attr-defined]
+
+    obj.save(save_path)
+
+    new_obj = SimpleObj()
+    new_obj.load(save_path)
+
+    assert new_obj.df.loc[0, "A"] == 10  # type: ignore[attr-defined]
+    assert new_obj.s.iloc[0] == 30  # type: ignore[attr-defined]
+
+    new_obj.jump_to("v1")
+    assert new_obj.df.loc[0, "A"] == 1  # type: ignore[attr-defined]
+    assert new_obj.s.iloc[0] == 3  # type: ignore[attr-defined]

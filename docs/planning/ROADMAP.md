@@ -74,12 +74,12 @@ This roadmap outlines the path to a full implementation of the **Janus** archite
 
 *Goal: Elevate the codebase to top-notch production standards.*
 
-- **7.1 Continuous Integration (CI/CD)**: Set up GitHub Actions for matrix testing (`pytest`, `cargo test`) across OS and Python versions. Automate `pre-commit` checks.
+- **7.1 Continuous Integration (CI/CD)**: Set up GitHub Actions for matrix testing (`pytest`) across OS and Python versions. Automate `pre-commit` checks. ✅
 - **7.2 Formalized Benchmarking**: Integrate `pytest-benchmark` to rigorously track latency over time and catch performance regressions automatically.
 - **7.3 Automated Publishing**: Introduce `maturin` and a PyPI release pipeline to build and publish cross-platform binary wheels.
 - **7.4 Documentation Automation**: Deploy Sphinx/MyST documentation automatically to GitHub Pages or ReadTheDocs.
 - **7.5 Strict Typing**: Resolve remaining `# type: ignore` statements in containers and plugins with robust `TypeVar` generics and `overload` signatures for improved IDE support.
-- **7.6 Code Quality Enforcement**: Enforce a strict minimum coverage threshold (e.g., >95%) via `pytest-cov`.
+- **7.6 Code Quality Enforcement**: Enforce a strict minimum coverage threshold (e.g., >95%) via `pytest-cov`. ✅
 
 ---
 
