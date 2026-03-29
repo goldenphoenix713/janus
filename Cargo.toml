@@ -9,6 +9,6 @@ name = "tachyon_rs" # The name of the .so / .pyd file
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.23.3", features = ["extension-module", "multiple-pymethods", "abi3-py311"] }
+pyo3 = { version = "0.23.3", features = ["extension-module", "multiple-pymethods", "abi3-py311", "generate-import-lib"] }
 serde = { version = "1.0", features = ["derive"] }
 rmp-serde = "1.3"
