@@ -76,8 +76,8 @@ def janus_decoder(obj: Any) -> Any:
 
 
 class JanusBase:
-    def __init__(self, mode: str) -> None:
-        self._engine = TachyonEngine(self, mode)
+    def __init__(self, mode: str, max_history: int = 50000) -> None:
+        self._engine = TachyonEngine(self, mode, max_history)
         self._restoring = False
         self._adapters = {type(a).__name__: a for a in ADAPTER_REGISTRY.values()}
 
@@ -343,13 +343,13 @@ class JanusBase:
 
 
 class TimelineBase(JanusBase):
-    def __init__(self) -> None:
-        super().__init__("linear")
+    def __init__(self, max_history: int = 50000) -> None:
+        super().__init__("linear", max_history=max_history)
 
 
 class MultiverseBase(JanusBase):
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__("multiversal")
+    def __init__(self, max_history: int = 50000) -> None:
+        super().__init__("multiversal", max_history=max_history)
 
     @property
     def current_branch(self) -> str:

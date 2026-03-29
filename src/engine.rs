@@ -14,12 +14,14 @@ pub struct TachyonEngine {
     pub current_node: usize,
     pub next_node_id: usize,
     pub mode: Mode,
+    pub max_nodes: usize,
 }
 
 #[pymethods]
 impl TachyonEngine {
     #[new]
-    pub fn new(owner: Bound<'_, PyAny>, mode: String) -> PyResult<Self> {
+    #[pyo3(signature = (owner, mode, max_nodes=50000))]
+    pub fn new(owner: Bound<'_, PyAny>, mode: String, max_nodes: usize) -> PyResult<Self> {
         let py = owner.py();
         let weakref_module = py.import("weakref")?;
         let weak_owner = weakref_module
@@ -67,6 +69,7 @@ impl TachyonEngine {
             current_node: 0,
             next_node_id: 1,
             mode: mode_enum,
+            max_nodes,
         })
     }
 
@@ -1134,6 +1137,7 @@ impl TachyonEngine {
         self.next_node_id += 1;
         self.branch_labels
             .insert(self.active_branch.clone(), node_id);
+        self.prune();
     }
 
     pub fn apply_node_deltas(&self, py: Python, node: &StateNode, forward: bool) -> PyResult<()> {

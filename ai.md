@@ -543,8 +543,8 @@ Verified benchmarks show **~27,000× speedup** over `copy.deepcopy()` for object
 | **P1 — Linear Foundation** | **100%** | — (complete: undo/redo, overwrite-future, linear guards) |
 | **P2 — Multiversal Branching** | **100%** | — (complete: DAG, branching, deletion, listing, moments) |
 | **P3 — Plugins & Containers** | **100%** | `TrackedList`/`TrackedDict` fully implemented; pandas & numpy adapters complete |
-| **P4 — Timeline & Flattening** | ~40% | No history squash, no filtering, no timeline diff |
-| **P5 — Tombstone & Memory** | **80%** | WeakRef-based memory safety implemented; needs more pruning strategies |
+| **P4 — Timeline & Flattening** | **100%** | — (complete: timeline extraction, filtering, Squash/Flatten, and get_diff) |
+| **P5 — Tombstone & Memory** | **100%** | — (complete: WeakRef-based safety, Tombstone raising, and history pruning with delta-merging) |
 
 ### 11.2 Completed Milestones
 

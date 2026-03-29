@@ -84,6 +84,136 @@ pub enum DictOperation {
     },
 }
 
+impl Clone for Operation {
+    fn clone(&self) -> Self {
+        Python::with_gil(|py| match self {
+            Operation::UpdateAttr {
+                name,
+                old_value,
+                new_value,
+            } => Operation::UpdateAttr {
+                name: name.clone(),
+                old_value: old_value.clone_ref(py),
+                new_value: new_value.clone_ref(py),
+            },
+            Operation::ListOp(op) => Operation::ListOp(op.clone()),
+            Operation::DictOp(op) => Operation::DictOp(op.clone()),
+            Operation::PluginOp {
+                path,
+                adapter_name,
+                delta_blob,
+            } => Operation::PluginOp {
+                path: path.clone(),
+                adapter_name: adapter_name.clone(),
+                delta_blob: delta_blob.clone_ref(py),
+            },
+        })
+    }
+}
+
+impl Clone for ListOperation {
+    fn clone(&self) -> Self {
+        Python::with_gil(|py| match self {
+            ListOperation::Insert { path, index, value } => ListOperation::Insert {
+                path: path.clone(),
+                index: *index,
+                value: value.clone_ref(py),
+            },
+            ListOperation::Pop {
+                path,
+                index,
+                popped_value,
+            } => ListOperation::Pop {
+                path: path.clone(),
+                index: *index,
+                popped_value: popped_value.clone_ref(py),
+            },
+            ListOperation::Replace {
+                path,
+                index,
+                old_value,
+                new_value,
+            } => ListOperation::Replace {
+                path: path.clone(),
+                index: *index,
+                old_value: old_value.clone_ref(py),
+                new_value: new_value.clone_ref(py),
+            },
+            ListOperation::Clear { path, old_values } => ListOperation::Clear {
+                path: path.clone(),
+                old_values: old_values.iter().map(|v| v.clone_ref(py)).collect(),
+            },
+            ListOperation::Extend { path, new_values } => ListOperation::Extend {
+                path: path.clone(),
+                new_values: new_values.iter().map(|v| v.clone_ref(py)).collect(),
+            },
+            ListOperation::Remove { path, value } => ListOperation::Remove {
+                path: path.clone(),
+                value: value.clone_ref(py),
+            },
+        })
+    }
+}
+
+impl Clone for DictOperation {
+    fn clone(&self) -> Self {
+        Python::with_gil(|py| match self {
+            DictOperation::Clear {
+                path,
+                keys,
+                old_values,
+            } => DictOperation::Clear {
+                path: path.clone(),
+                keys: keys.clone(),
+                old_values: old_values.iter().map(|v| v.clone_ref(py)).collect(),
+            },
+            DictOperation::Pop {
+                path,
+                key,
+                old_value,
+            } => DictOperation::Pop {
+                path: path.clone(),
+                key: key.clone(),
+                old_value: old_value.clone_ref(py),
+            },
+            DictOperation::PopItem {
+                path,
+                key,
+                old_value,
+            } => DictOperation::PopItem {
+                path: path.clone(),
+                key: key.clone(),
+                old_value: old_value.clone_ref(py),
+            },
+            DictOperation::SetDefault { path, key, value } => DictOperation::SetDefault {
+                path: path.clone(),
+                key: key.clone(),
+                value: value.clone_ref(py),
+            },
+            DictOperation::Update {
+                path,
+                keys,
+                old_values,
+                new_values,
+            } => DictOperation::Update {
+                path: path.clone(),
+                keys: keys.clone(),
+                old_values: old_values.iter().map(|v| v.clone_ref(py)).collect(),
+                new_values: new_values.iter().map(|v| v.clone_ref(py)).collect(),
+            },
+            DictOperation::Delete {
+                path,
+                key,
+                old_value,
+            } => DictOperation::Delete {
+                path: path.clone(),
+                key: key.clone(),
+                old_value: old_value.clone_ref(py),
+            },
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Mode {
     Linear,
