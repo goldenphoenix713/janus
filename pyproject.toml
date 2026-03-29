@@ -7,7 +7,7 @@ name = "janus"
 version = "0.2.0"
 description = "Extensible, non-linear state travel powered by the Tachyon-RS engine."
 authors = [{ name = "AI Dev Team", email = "dev@example.com" }]
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "loguru>=0.7.3",
     "msgpack>=1.1.2",
@@ -56,7 +56,7 @@ include = ["src/**/*", "Cargo.toml"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py312"
+target-version = "py310"
 
 [tool.ruff.lint]
 extend-select = [
@@ -80,7 +80,7 @@ extend-select = [
 ignore = []
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.10"
 check_untyped_defs = true
 ignore_missing_imports = true
 warn_return_any = true
