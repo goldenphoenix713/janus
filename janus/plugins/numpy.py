@@ -163,7 +163,7 @@ if NUMPY_AVAILABLE:
         @staticmethod
         def get_snapshot(target: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
             """Create a deep copy of the array for state tracking."""
-            return target.copy()  # type: ignore[no-any-return]
+            return target.copy()
 
         @staticmethod
         def get_size(target: np.ndarray) -> int:
