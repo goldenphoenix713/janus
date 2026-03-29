@@ -75,7 +75,23 @@ def janus_decoder(obj: Any) -> Any:
 
 
 class JanusBase:
+    """
+    Base class for Janus state tracking, providing history, undo/redo, and persistence.
+
+    JanusBase intercepts attribute assignments and container mutations to build a
+    directed acyclic graph (DAG) of state transitions. This enables features like
+    multiverse branching, state restoration, and timeline squashing.
+    """
+
     def __init__(self, mode: str, max_history: int = 50000) -> None:
+        """
+        Initialize a new Janus tracking instance.
+
+        Args:
+            mode: The tracking mode ("linear" for Timeline, "multiversal" for
+                Multiverse).
+            max_history: The maximum number of state nodes to retain in the engine.
+        """
         self._engine = TachyonEngine(self, mode, max_history)
         self._restoring = False
         self._adapters = {type(a).__name__: a for a in ADAPTER_REGISTRY.values()}
@@ -157,10 +173,13 @@ class JanusBase:
                 # Use identity for numpy/pandas to avoid value error,
                 # equality for others
                 if (
-                    PANDAS_INSTALLED
-                    and isinstance(value, (pd.DataFrame, pd.Series))
-                    or NUMPY_AVAILABLE
-                    and isinstance(value, np.ndarray)
+                    (PANDAS_INSTALLED and isinstance(value, (pd.DataFrame, pd.Series)))
+                    or (NUMPY_AVAILABLE and isinstance(value, np.ndarray))
+                    or (
+                        PANDAS_INSTALLED
+                        and isinstance(old_value, (pd.DataFrame, pd.Series))
+                    )
+                    or (NUMPY_AVAILABLE and isinstance(old_value, np.ndarray))
                 ):
                     changed = value is not old_value
                 else:
@@ -189,19 +208,43 @@ class JanusBase:
         super().__setattr__(name, value)
 
     def create_moment_label(self, label: str) -> None:
-        """Label the current moment for future restoration."""
+        """
+        Assign a easy-to-read label to the current state node.
+
+        Labels can be used as targets for `jump_to`, `diff`, or `squash` operations.
+
+        Args:
+            label: The unique name for this moment in time.
+        """
         self._engine.label_node(label)
 
     def jump_to(self, label: str) -> None:
-        """Restore the state to a different moment."""
+        """
+        Restore the application state to a previously labeled moment.
+
+        This moves the engine's 'head' to the node identified by the label and
+        synchronizes all tracked Python attributes and containers.
+
+        Args:
+            label: The name of the labeled moment to restore.
+        """
         self._engine.move_to(label)
 
     def get_labeled_moments(self) -> list[str]:
-        """List all available moment labels."""
+        """
+        Retrieve a list of all labels assigned in the current history.
+
+        Returns:
+            A list of strings representing the available moment labels.
+        """
         return self._engine.list_nodes()
 
     def undo(self) -> None:
-        """Undo the last operation."""
+        """
+        Revert the state to the previous node in the current timeline.
+
+        If the current node is the root, this operation has no effect.
+        """
         self._restoring = True
         try:
             self._engine.undo()
@@ -209,26 +252,74 @@ class JanusBase:
             self._restoring = False
 
     def redo(self) -> None:
-        """Redo the last operation."""
+        """
+        Advance the state to the next node in the current timeline.
+
+        This is only possible if an `undo` was performed and no new mutations
+        have occurred since.
+        """
         self._engine.redo()
 
     def tag_moment(self, **kwargs: Any) -> None:
+        """
+        Attach arbitrary metadata tags to the current state node.
+
+        Args:
+            **kwargs: Key-value pairs to store as metadata.
+        """
         for key, value in kwargs.items():
             self._engine.set_metadata(key, value)
 
     def get_all_tag_keys(self, label: str | None = None) -> tuple[str, ...]:
+        """
+        Get all metadata keys associated with a specific moment.
+
+        Args:
+            label: The label of the moment to query. Defaults to the current moment.
+
+        Returns:
+            A tuple of metadata keys.
+        """
         node_id = self._resolve_label_to_id(label) if label else None
         return tuple(self._engine.get_metadata_keys(node_id))
 
     def get_all_tag_values(self, label: str | None = None) -> tuple[Any, ...]:
+        """
+        Get all metadata values associated with a specific moment.
+
+        Args:
+            label: The label of the moment to query. Defaults to the current moment.
+
+        Returns:
+            A tuple of metadata values.
+        """
         node_id = self._resolve_label_to_id(label) if label else None
         return tuple(self._engine.get_metadata_values(node_id))
 
     def get_all_tags(self, label: str | None = None) -> dict[str, Any]:
+        """
+        Get all metadata key-value pairs associated with a specific moment.
+
+        Args:
+            label: The label of the moment to query. Defaults to the current moment.
+
+        Returns:
+            A dictionary of all tags for the specified moment.
+        """
         node_id = self._resolve_label_to_id(label) if label else None
         return dict(self._engine.get_metadata_items(node_id))
 
     def get_moment_tag(self, key: str, label: str | None = None) -> Any:
+        """
+        Retrieve a specific metadata value by key from a moment.
+
+        Args:
+            key: The metadata key to look up.
+            label: The label of the moment to query. Defaults to the current moment.
+
+        Returns:
+            The metadata value associated with the key, or None if not found.
+        """
         node_id = self._resolve_label_to_id(label) if label else None
         return self._engine.get_metadata(key, node_id)
 
@@ -342,30 +433,52 @@ class JanusBase:
 
 
 class TimelineBase(JanusBase):
+    """
+    A linear state tracking implementation.
+
+    TimelineBase enforces a single path of history. Undoing an operation and then
+    performing a new mutation will truncate the 'future' that was undone.
+    """
+
     def __init__(self, max_history: int = 50000) -> None:
         super().__init__("linear", max_history=max_history)
 
 
 class MultiverseBase(JanusBase):
+    """
+    A multiversal state tracking implementation supporting branching and merging.
+
+    MultiverseBase allows creating named branches from any point in history,
+    switching between them, and merging changes across branches.
+    """
+
     def __init__(self, max_history: int = 50000) -> None:
         super().__init__("multiversal", max_history=max_history)
 
     @property
     def current_branch(self) -> str:
+        """The name of the currently active branch."""
         return self._engine.current_branch
 
     def branch(self, label: str) -> None:
+        """
+        Create a new branch from the current state.
+
+        Args:
+            label: The name of the new branch.
+        """
         self._engine.create_branch(label)
 
     def create_branch(self, label: str) -> None:
-        """Alias for branch() for API convenience."""
+        """Alias for `branch()` for API convenience."""
         self.branch(label)
 
     def switch_branch(self, label: str) -> None:
-        """Alias for jump_to() for API convenience."""
+        """Alias for `jump_to()` for API convenience."""
         self.jump_to(label)
 
     def list_branches(self) -> list[str]:
+        """List all existing branch names."""
         return self._engine.list_branches()
 
     def list_nodes(self) -> list[str]:
@@ -444,6 +557,15 @@ class MultiverseBase(JanusBase):
         return results
 
     def delete_branch(self, label: str) -> None:
+        """
+        Permanently delete a branch and its head reference.
+
+        Note: This does not necessarily delete the nodes associated with the
+        branch if they are part of other branches' histories.
+
+        Args:
+            label: The name of the branch to delete.
+        """
         self._engine.delete_branch(label)
 
     def plot(self, backend: str | None = None, **kwargs: Any) -> Any:

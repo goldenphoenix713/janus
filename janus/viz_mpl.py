@@ -13,9 +13,28 @@ if TYPE_CHECKING:
 
 
 class MatplotlibBackend:
-    """Renders the multiverse DAG using Matplotlib and NetworkX."""
+    """
+    Renders the multiverse DAG using Matplotlib and NetworkX.
+
+    This backend provides a more traditional node-link diagram with
+    customizable colors and layout.
+    """
 
     def plot(self, obj: "MultiverseBase", **kwargs: Any) -> Any:
+        """
+        Renders the multiverse graph using Matplotlib.
+
+        Args:
+            obj: The Multiverse instance to visualize.
+            show: Whether to call plt.show() immediately.
+            figsize: Tuple of (width, height) for the figure.
+            node_size: Size of the nodes in the plot.
+            font_size: Size of the text labels.
+            title: Custom title for the plot.
+
+        Returns:
+            A Matplotlib Figure object.
+        """
         if not MPL_AVAILABLE:
             raise ImportError(
                 "Matplotlib backend requires 'matplotlib' and 'networkx'. "

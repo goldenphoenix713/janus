@@ -137,6 +137,7 @@ sim.prune()
 
 ## 📚 Documentation
 
+- [Getting Started with Plugins](docs/plugins.md)
 - [Architecture Blueprint](docs/architecture/janus_blueprint.md)
 - [Technical Deep Dive](docs/architecture/TECHNICAL_DEEP_DIVE.md)
 - [Project Roadmap](docs/planning/ROADMAP.md)

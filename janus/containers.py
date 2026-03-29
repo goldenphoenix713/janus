@@ -16,9 +16,26 @@ if NUMPY_AVAILABLE:
 
 
 class TrackedList(list):  # type: ignore[type-arg]
+    """
+    A list subclass that automatically logs mutations to the Janus engine.
+
+    TrackedList intercepts methods like `append`, `extend`, `insert`, `pop`,
+    `clear`, and `__setitem__` to ensure the Janus engine can track and
+    revert changes to the collection.
+    """
+
     def __init__(
         self, items: list[Any], engine: TachyonEngine, name: str, owner: Any = None
     ) -> None:
+        """
+        Initialize a tracked list.
+
+        Args:
+            items: The initial items for the list.
+            engine: The TachyonEngine instance for logging.
+            name: The attribute name or path of this container.
+            owner: The JanusBase object that owns this container.
+        """
         super().__init__(items)
         self._core = TrackedListCore(engine, name)
         self._engine = engine
@@ -107,9 +124,25 @@ class TrackedList(list):  # type: ignore[type-arg]
 
 
 class TrackedDict(dict):  # type: ignore[type-arg]
+    """
+    A dict subclass that automatically logs mutations to the Janus engine.
+
+    TrackedDict intercepts key assignments, deletions, and updates to ensure
+    the Janus engine can track and revert changes to the collection.
+    """
+
     def __init__(
         self, items: dict[str, Any], engine: TachyonEngine, name: str, owner: Any = None
     ) -> None:
+        """
+        Initialize a tracked dictionary.
+
+        Args:
+            items: The initial key-value pairs.
+            engine: The TachyonEngine instance for logging.
+            name: The attribute name or path of this container.
+            owner: The JanusBase object that owns this container.
+        """
         super().__init__(items)
         self._core = TrackedDictCore(engine, name)
         self._engine = engine
@@ -203,7 +236,21 @@ class TrackedDict(dict):  # type: ignore[type-arg]
 
 
 def wrap_value(value: Any, engine: TachyonEngine, path: str, owner: Any = None) -> Any:
-    """Recursively wrap containers in Janus proxies."""
+    """
+    Recursively wrap standard Python containers in Janus tracking proxies.
+
+    This function detects `list` and `dict` objects and returns `TrackedList`
+    and `TrackedDict` versions of them, linked to the provided engine.
+
+    Args:
+        value: The value to wrap.
+        engine: The Janus engine to use for tracking.
+        path: The path/name of the object in the JanusBase hierarchy.
+        owner: The JanusBase object that owns this value.
+
+    Returns:
+        The wrapped value (or the original value if not a supported container).
+    """
     if isinstance(value, (TrackedList, TrackedDict)):
         return value
 

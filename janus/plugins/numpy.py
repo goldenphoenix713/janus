@@ -11,77 +11,17 @@ try:
 except ImportError:
     NUMPY_AVAILABLE = False
 
+from .utils import log_post_mutation, log_pre_mutation
 
 if NUMPY_AVAILABLE:
-    # ------- Mutation Hooks ------- #
-
-    def _get_engine(target: TrackedNumpyArray) -> Any | None:
-        """Find the Janus engine by traversing the view hierarchy."""
-        curr: TrackedNumpyArray | None = target
-        while curr is not None:
-            engine = getattr(curr, "_janus_engine", None)
-            if engine is not None:
-                return engine
-            curr = getattr(curr, "_janus_parent", None)
-        return None
-
-    def _log_pre_mutation(target: TrackedNumpyArray, key: Any) -> None:
-        """Log the state of the array before a mutation."""
-        if getattr(target, "_restoring", False):
-            return
-
-        engine = _get_engine(target)
-        if engine and getattr(engine.owner, "_restoring", False):
-            return
-
-        parent = getattr(target, "_janus_parent", None)
-        root = parent if parent is not None else target
-
-        if engine is None or hasattr(root, "_janus_snapshot"):
-            return
-
-        # Snapshot the current state of the root array
-        snapshot = root.copy()
-        object.__setattr__(root, "_janus_snapshot", snapshot)
-        object.__setattr__(root, "_janus_initiator", id(target))
-
-    def _log_post_mutation(target: TrackedNumpyArray, key: Any) -> None:
-        """Log the state of the array after a mutation."""
-        if getattr(target, "_restoring", False):
-            return
-
-        engine = _get_engine(target)
-        if engine and getattr(engine.owner, "_restoring", False):
-            return
-
-        parent = getattr(target, "_janus_parent", None)
-        root = parent if parent is not None else target
-        initiator = getattr(root, "_janus_initiator", None)
-
-        if engine is None or initiator != id(target):
-            return
-
-        from janus.registry import ADAPTER_REGISTRY
-
-        adapter = ADAPTER_REGISTRY[type(root)]
-        current = root.copy()
-        delta = adapter.get_delta(getattr(root, "_janus_snapshot"), current)
-
-        engine.log_plugin_op(
-            getattr(root, "_janus_name", "unknown"),
-            "NumpyAdapter",
-            delta,
-        )
-
-        delattr(root, "_janus_snapshot")
-        delattr(root, "_janus_initiator")
-
-    # ------- Tracked Array Proxy ------- #
 
     class TrackedNumpyArray(np.ndarray):
         """
-        A proxy subclass of np.ndarray that intercepts in-place mutations.
-        All views of a TrackedNumpyArray share the same Janus metadata root.
+        A proxy subclass of `np.ndarray` that intercepts in-place mutations.
+
+        All views created from a `TrackedNumpyArray` (slices, etc.) share the same
+        Janus engine reference and name, ensuring that any mutation anywhere in
+        the array hierarchy is logged as a single plugin operation.
         """
 
         _janus_engine: Any | None
@@ -90,6 +30,7 @@ if NUMPY_AVAILABLE:
         _restoring: bool
         _janus_snapshot: np.ndarray | None
         _janus_initiator: int | None
+        _janus_adapter_name: str = "NumpyAdapter"
 
         _metadata = [
             "_janus_engine",
@@ -98,9 +39,11 @@ if NUMPY_AVAILABLE:
             "_restoring",
             "_janus_snapshot",
             "_janus_initiator",
+            "_janus_adapter_name",
         ]
 
         def __new__(cls, input_array: np.ndarray) -> TrackedNumpyArray:
+            """Create a new TrackedNumpyArray from an existing array."""
             return np.asarray(input_array).view(cls)
 
         def __array_finalize__(self, obj: np.ndarray | None) -> None:
@@ -129,16 +72,31 @@ if NUMPY_AVAILABLE:
                 super().__setitem__(key, value)
                 return
 
-            _log_pre_mutation(self, key)
+            log_pre_mutation(self)
             super().__setitem__(key, value)
-            _log_post_mutation(self, key)
+            log_post_mutation(self)
 
     @register_adapter(TrackedNumpyArray)
     class NumpyAdapter:
+        """
+        Janus adapter for NumPy arrays.
+
+        Handles forward and backward state transitions by copying array data
+        between snapshots and the live target. This is a sparse-compatible adapter
+        as it could be extended to handle only modified indices if needed.
+        """
+
         @staticmethod
         def apply_forward(
             target: np.ndarray, delta_blob: tuple[np.ndarray, np.ndarray]
         ) -> None:
+            """
+            Synchronize the target array forward to a newer state.
+
+            Args:
+                target: The live NumPy array to update.
+                delta_blob: A tuple of (old_state, new_state) arrays.
+            """
             _, new = delta_blob
             object.__setattr__(target, "_restoring", True)
             try:
@@ -153,6 +111,13 @@ if NUMPY_AVAILABLE:
         def apply_backward(
             target: np.ndarray, delta_blob: tuple[np.ndarray, np.ndarray]
         ) -> None:
+            """
+            Roll back the target array to a previous state.
+
+            Args:
+                target: The live NumPy array to update.
+                delta_blob: A tuple of (old_state, new_state) arrays.
+            """
             old, _ = delta_blob
             object.__setattr__(target, "_restoring", True)
             try:
@@ -167,12 +132,20 @@ if NUMPY_AVAILABLE:
         def get_delta(
             old: np.ndarray, new: np.ndarray
         ) -> tuple[np.ndarray, np.ndarray]:
-            return (old, new)
+            """
+            Calculate the difference between two array states.
+
+            For NumPy, this currently returns a full snapshot pair. We copy
+            the new state to ensure the delta remains stable.
+            """
+            return (old, new.copy())
 
         @staticmethod
         def get_snapshot(target: np.ndarray) -> np.ndarray:
+            """Create a deep copy of the array for state tracking."""
             return target.copy()
 
         @staticmethod
         def get_size(target: np.ndarray) -> int:
+            """Return the memory usage of the array in bytes."""
             return target.nbytes

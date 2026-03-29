@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
@@ -7,15 +9,30 @@ if TYPE_CHECKING:
 class VizBackend(Protocol):
     """Protocol for Janus visualization backends."""
 
-    def plot(self, obj: "MultiverseBase", **kwargs: Any) -> Any:
+    def plot(self, obj: MultiverseBase, **kwargs: Any) -> Any:
         """Render the multiverse DAG."""
         ...
 
 
 class MermaidBackend:
-    """Renders the multiverse DAG as a Mermaid diagram string."""
+    """
+    Renders the multiverse DAG as a Mermaid diagram string.
 
-    def plot(self, obj: "MultiverseBase", **kwargs: Any) -> str:
+    This backend produces a 'graph LR' string suitable for rendering in
+    Markdown viewers that support Mermaid.
+    """
+
+    def plot(self, obj: MultiverseBase, **kwargs: Any) -> str:
+        """
+        Generate a Mermaid diagram for the given Multiverse object.
+
+        Args:
+            obj: The Multiverse instance to visualize.
+            **kwargs: Additional plotting options.
+
+        Returns:
+            A string containing the Mermaid diagram definition.
+        """
         data = obj._engine.get_graph_data()
         data.sort(key=lambda x: x["id"])
 

@@ -4,67 +4,30 @@ from typing import Any
 
 from janus.registry import JanusAdapter, register_adapter
 
+from .utils import log_post_mutation, log_pre_mutation
+
 try:
     import pandas as pd
-
-    # ------- Helper Functions ------- #
-
-    def _log_pre_mutation(obj: TrackedDataFrame | TrackedSeries, name: str) -> None:
-        root = getattr(obj, "_janus_parent", obj)
-        engine = getattr(root, "_janus_engine", None)
-        if engine:
-            # Check if root object is being restored (e.g. during sync_from_root)
-            if getattr(engine.owner, "_restoring", False):
-                return
-            # Avoid nested logging: if a snapshot already exists, we are already
-            # being tracked by a higher-level operation (like an Indexer).
-            if hasattr(root, "_janus_snapshot"):
-                return
-
-            snapshot: pd.DataFrame | pd.Series
-            if isinstance(root, (pd.DataFrame, pd.Series)):
-                snapshot = root.copy(deep=True)
-            else:
-                raise TypeError(f"Unsupported type for snapshot: {type(root)}")
-
-            # Mark who started this snapshot to ensure they are the one to close it
-            object.__setattr__(root, "_janus_snapshot", snapshot)
-            object.__setattr__(root, "_janus_initiator", id(obj))
-
-    def _log_post_mutation(obj: TrackedDataFrame | TrackedSeries, name: str) -> None:
-        root = getattr(obj, "_janus_parent", obj)
-        if hasattr(root, "_janus_engine") and hasattr(root, "_janus_snapshot"):
-            # Only the initiator who created the snapshot should finalize the log
-            if getattr(root, "_janus_initiator", None) != id(obj):
-                return
-
-            current: pd.DataFrame | pd.Series
-            if isinstance(root, (pd.DataFrame, pd.Series)):
-                current = root.copy(deep=True)
-            else:
-                raise TypeError(f"Unsupported type for snapshot: {type(root)}")
-
-            # Get the adapter and calculate compact delta
-            from janus.registry import ADAPTER_REGISTRY
-
-            adapter = ADAPTER_REGISTRY[type(root)]
-            snapshot = getattr(root, "_janus_snapshot")
-            delta = adapter.get_delta(snapshot, current)
-
-            root._janus_engine.log_plugin_op(
-                root._janus_name,
-                root._pandas_adapter,
-                delta,
-            )
-            # Cleanup
-            delattr(root, "_janus_snapshot")
-            delattr(root, "_janus_initiator")
 
     # ------- Tracked Data Structures ------- #
 
     class TrackedSeries(pd.Series):  # type: ignore[misc]
-        _metadata = ["_janus_engine", "_janus_name", "_janus_parent", "_restoring"]
-        _pandas_adapter = "TrackedSeriesAdapter"
+        """
+        A `pd.Series` subclass that automatically logs mutations to Janus.
+
+        TrackedSeries intercepts attribute and item assignments to ensure that
+        changes are recorded in the Janus engine. It also provides wrapped
+        indexers (`loc`, `iloc`, `at`, `iat`) to track cell-level mutations.
+        """
+
+        _metadata = [
+            "_janus_engine",
+            "_janus_name",
+            "_janus_parent",
+            "_restoring",
+            "_janus_adapter_name",
+        ]
+        _janus_adapter_name = "TrackedSeriesAdapter"
 
         def __init__(self, data: Any = None, *args: Any, **kwargs: Any) -> None:
             # Ensure we don't force a copy if data is a view
@@ -108,10 +71,10 @@ try:
                 super().__setattr__(key, value)
                 return
 
-            _log_pre_mutation(self, key)
+            log_pre_mutation(self)
             super().__setattr__(key, value)
             self._sync_to_parent()
-            _log_post_mutation(self, key)
+            log_post_mutation(self)
 
         def __setitem__(self, key: Any, value: Any) -> None:
             if key in [*self._metadata, "_restoring"]:
@@ -125,10 +88,10 @@ try:
                 super().__setitem__(key, value)
                 return
 
-            _log_pre_mutation(self, key)
+            log_pre_mutation(self)
             super().__setitem__(key, value)
             self._sync_to_parent()
-            _log_post_mutation(self, key)
+            log_post_mutation(self)
 
         def _sync_to_parent(self) -> None:
             parent = getattr(self, "_janus_parent", None)
@@ -145,8 +108,23 @@ try:
                     object.__setattr__(parent, "_restoring", False)
 
     class TrackedDataFrame(pd.DataFrame):  # type: ignore[misc]
-        _metadata = ["_janus_engine", "_janus_name", "_janus_parent", "_restoring"]
-        _pandas_adapter = "TrackedDataFrameAdapter"
+        """
+        A `pd.DataFrame` subclass that automatically logs mutations to Janus.
+
+        TrackedDataFrame intercepts attribute and item assignments to ensure
+        that changes are recorded in the Janus engine. It also provides wrapped
+        indexers (`loc`, `iloc`, `at`, `iat`) to track cell-level and slice-level
+        mutations.
+        """
+
+        _metadata = [
+            "_janus_engine",
+            "_janus_name",
+            "_janus_parent",
+            "_restoring",
+            "_janus_adapter_name",
+        ]
+        _janus_adapter_name = "TrackedDataFrameAdapter"
 
         def __init__(self, data: Any = None, *args: Any, **kwargs: Any) -> None:
             # Ensure we don't force a copy if data is a view
@@ -190,10 +168,10 @@ try:
                 super().__setattr__(key, value)
                 return
 
-            _log_pre_mutation(self, key)
+            log_pre_mutation(self)
             super().__setattr__(key, value)
             self._sync_to_parent()
-            _log_post_mutation(self, key)
+            log_post_mutation(self)
 
         def __setitem__(self, key: Any, value: Any) -> None:
             if key in [*self._metadata, "_restoring"]:
@@ -207,10 +185,10 @@ try:
                 super().__setitem__(key, value)
                 return
 
-            _log_pre_mutation(self, key)
+            log_pre_mutation(self)
             super().__setitem__(key, value)
             self._sync_to_parent()
-            _log_post_mutation(self, key)
+            log_post_mutation(self)
 
         def _sync_to_parent(self) -> None:
             parent = getattr(self, "_janus_parent", None)
@@ -229,6 +207,15 @@ try:
     # ------- Indexer Wrappers ------- #
 
     class BaseTrackedIndexer:
+        """
+        A proxy for Pandas indexers that intercepts mutations for tracking.
+
+        This class wraps `.loc`, `.iloc`, `.at`, and `.iat` to ensure that
+        any mutation performed through them is captured by the Janus engine.
+        It also ensures that any resulting slices are themselves wrapped in
+        `TrackedSeries` or `TrackedDataFrame` proxies.
+        """
+
         def __init__(
             self,
             parent_df: TrackedDataFrame | TrackedSeries,
@@ -278,7 +265,7 @@ try:
                 adapter = (
                     "TrackedSeriesAdapter" if is_series else "TrackedDataFrameAdapter"
                 )
-                object.__setattr__(result, "_pandas_adapter", adapter)
+                object.__setattr__(result, "_janus_adapter_name", adapter)
 
             return result
 
@@ -291,14 +278,21 @@ try:
                 return
 
             # Intercept for writes
-            _log_pre_mutation(self._parent, "indexer")
+            log_pre_mutation(self._parent)
             self._real_indexer[key] = value
-            _log_post_mutation(self._parent, "indexer")
+            log_post_mutation(self._parent)
 
     # ------- Adapters ------- #
 
     @register_adapter(TrackedDataFrame)
     class TrackedDataFrameAdapter(JanusAdapter):
+        """
+        Janus adapter for Pandas DataFrames.
+
+        Optimizes state tracking by calculating sparse column-level deltas
+        instead of full-object snapshots where possible.
+        """
+
         def get_delta(self, old_snapshot: Any, new_state: Any) -> Any:
             """Calculate sparse column-level delta."""
             old_delta = {}
@@ -363,6 +357,12 @@ try:
 
     @register_adapter(TrackedSeries)
     class TrackedSeriesAdapter(JanusAdapter):
+        """
+        Janus adapter for Pandas Series.
+
+        Handles forward and backward state transitions for individual Series objects.
+        """
+
         def get_delta(self, old_snapshot: Any, new_state: Any) -> Any:
             # Ensure raw series are stored
             return (pd.Series(old_snapshot), pd.Series(new_state))
