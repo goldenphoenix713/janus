@@ -34,6 +34,32 @@ jobs:
       - name: Run Pre-Commit Hooks
         run: uv run pre-commit run --all-files
 
+  docs:
+    name: Build Docs
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install Dependencies
+        run: uv sync --group docs
+
+      - name: Build Janus (Maturin)
+        run: uv run maturin develop
+
+      - name: Build Docs (Sphinx)
+        run: uv run sphinx-build -b html docs/source docs/build/html -W --keep-going
+
   test:
     name: Build & Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
     needs: lint
