@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import contextlib
+import zipfile
+from pathlib import Path
 from typing import Any
+
+import msgpack
 
 from .containers import wrap_value
 from .registry import ADAPTER_REGISTRY
@@ -25,6 +29,50 @@ except ImportError:
 
 if NUMPY_AVAILABLE:
     from .plugins.numpy import TrackedNumpyArray
+
+
+def janus_encoder(obj: Any) -> Any:
+    """Custom encoder for Janus-tracked objects to ensure msgpack compatibility."""
+    from janus.containers import TrackedDict, TrackedList
+
+    if PANDAS_INSTALLED:
+        from janus.plugins.pandas import TrackedDataFrame, TrackedSeries
+
+        if isinstance(obj, (TrackedDataFrame, pd.DataFrame)):
+            return {
+                "__janus_type__": "pd.DataFrame",
+                "data": obj.to_dict(orient="split"),
+            }
+        if isinstance(obj, (TrackedSeries, pd.Series)):
+            return {
+                "__janus_type__": "pd.Series",
+                "data": obj.to_dict(),
+                "name": obj.name,
+            }
+
+    if isinstance(obj, TrackedDict):
+        return dict(obj)
+    if isinstance(obj, TrackedList):
+        return list(obj)
+
+    # If it's something else we don't know, let msgpack try its best
+    return obj
+
+
+def janus_decoder(obj: Any) -> Any:
+    """Custom decoder for Janus-tracked objects to re-hydrate during load."""
+    if isinstance(obj, dict) and "__janus_type__" in obj:
+        try:
+            import pandas as pd
+
+            if obj["__janus_type__"] == "pd.DataFrame":
+                # pd.DataFrame.from_dict doesn't support 'split', but constructor does
+                return pd.DataFrame(**obj["data"])
+            if obj["__janus_type__"] == "pd.Series":
+                return pd.Series(obj["data"], name=obj.get("name"))
+        except ImportError:
+            pass
+    return obj
 
 
 class JanusBase:
@@ -56,7 +104,7 @@ class JanusBase:
             return
 
         # Check if we are currently in a state restoration
-        if self._restoring:
+        if getattr(self, "_restoring", False):
             super().__setattr__(name, value)
             return
 
@@ -70,7 +118,8 @@ class JanusBase:
             shadow_name = f"_shadow_{name}"
             shadow_value = getattr(self, shadow_name, None)
             delta_blob = adapter.get_delta(shadow_value, value)
-            self._engine.log_plugin_op(name, type(adapter).__name__, delta_blob)
+            if not self._restoring:
+                self._engine.log_plugin_op(name, type(adapter).__name__, delta_blob)
             super().__setattr__(shadow_name, adapter.get_snapshot(value))
         else:
             # Recursive Container Wrapping
@@ -102,7 +151,40 @@ class JanusBase:
 
         # Log standard attribute update to Rust engine
         if not name.startswith("_"):
-            self._engine.log_update_attr(name, old_value, value)
+            # Avoid redundant logging when loading/sync_from_root
+            # has already mapped identity
+            try:
+                # Use identity for numpy/pandas to avoid value error,
+                # equality for others
+                if (
+                    PANDAS_INSTALLED
+                    and isinstance(value, (pd.DataFrame, pd.Series))
+                    or NUMPY_AVAILABLE
+                    and isinstance(value, np.ndarray)
+                ):
+                    changed = value is not old_value
+                else:
+                    changed = old_value != value
+            except Exception:
+                changed = True
+
+            if changed:
+                # Handle snapshotting to prevent DAG history poisoning
+                snap_val = value
+                if isinstance(value, (list, dict)):
+
+                    def _unwrap(obj: Any) -> Any:
+                        if isinstance(obj, list):
+                            return [_unwrap(x) for x in obj]
+                        if isinstance(obj, dict):
+                            return {k: _unwrap(v) for k, v in obj.items()}
+                        return obj
+
+                    import copy
+
+                    snap_val = copy.deepcopy(_unwrap(value))
+
+                self._engine.log_update_attr(name, old_value, snap_val)
 
         super().__setattr__(name, value)
 
@@ -159,6 +241,74 @@ class JanusBase:
         if node_id is None:
             raise KeyError(f"Label '{label}' not found in timeline or multiverse")
         return node_id
+
+    def save(self, path: str | Path) -> None:
+        """
+        Persist the entire multiverse/timeline history to a .jns file.
+        Uses a ZIP container with MessagePack serialization.
+        """
+        path = Path(path)
+        if path.suffix != ".jns":
+            path = path.with_suffix(".jns")
+
+        # 1. Get DAG from Rust
+        dag_state = self._engine.get_graph_state()
+
+        # 2. Extract Python context (shadow snapshots for plugins)
+        context = {k: v for k, v in self.__dict__.items() if k.startswith("_shadow_")}
+
+        # 3. Serialize.
+        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(
+                "dag.msgpack",
+                msgpack.packb(dag_state, default=janus_encoder, use_bin_type=True),
+            )
+            zf.writestr(
+                "context.msgpack",
+                msgpack.packb(context, default=janus_encoder, use_bin_type=True),
+            )
+
+    def load(self, path: str | Path) -> None:
+        """
+        Restore history and state from a .jns file.
+        """
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"Persistence file not found: {path}")
+
+        with zipfile.ZipFile(path, "r") as zf:
+            dag_data = msgpack.unpackb(
+                zf.read("dag.msgpack"),
+                object_hook=janus_decoder,
+                strict_map_key=False,
+                raw=False,
+            )
+            ctx_data = msgpack.unpackb(
+                zf.read("context.msgpack"),
+                object_hook=janus_decoder,
+                strict_map_key=False,
+                raw=False,
+            )
+
+        # 1. Restore Rust engine state
+        self._engine.set_graph_state(dag_data)
+
+        self._restoring = True
+        try:
+            # 2. Re-hydrate Python context
+            for k, v in ctx_data.items():
+                setattr(self, k, v)
+
+            # 3. Synchronize live objects with the loaded head node
+            self._engine.sync_from_root()
+
+            # 4. Re-link top-level attributes to ensure they are tracked
+            for name, value in self.__dict__.items():
+                if not name.startswith("_"):
+                    # Re-trigger wrapping and engine linkage
+                    setattr(self, name, value)
+        finally:
+            self._restoring = False
 
 
 class TimelineBase(JanusBase):

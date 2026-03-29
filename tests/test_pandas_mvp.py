@@ -191,6 +191,7 @@ def test_view_propagation_mutation() -> None:
 
     # Get a row-view via .loc
     row_view = store.df.loc[0]
+
     # Because of constructor-sliced, row_view should be a TrackedSeries
     assert isinstance(row_view, TrackedSeries)
 

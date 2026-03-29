@@ -16,11 +16,13 @@ if NUMPY_AVAILABLE:
 
 
 class TrackedList(list):  # type: ignore[type-arg]
-    def __init__(self, items: list[Any], engine: TachyonEngine, name: str) -> None:
+    def __init__(
+        self, items: list[Any], engine: TachyonEngine, name: str, owner: Any = None
+    ) -> None:
         super().__init__(items)
         self._core = TrackedListCore(engine, name)
         self._engine = engine
-        self._owner = engine.owner
+        self._owner = owner if owner is not None else getattr(engine, "owner", None)
         self._name = name
         self._silent = False
 
@@ -29,15 +31,25 @@ class TrackedList(list):  # type: ignore[type-arg]
         return self._silent or getattr(self._owner, "_restoring", False)
 
     def append(self, value: Any) -> None:
-        wrapped = wrap_value(value, self._engine, f"{self._name}[{len(self)}]")
+        wrapped = wrap_value(
+            value, self._engine, f"{self._name}[{len(self)}]", owner=self._owner
+        )
         super().append(wrapped)
         if not self._is_silent:
-            self._core.log_insert(len(self) - 1, wrapped)
+            # Snapshot for DAG
+            dag_val = wrapped
+            if isinstance(wrapped, list):
+                dag_val = list(wrapped)
+            elif isinstance(wrapped, dict):
+                dag_val = dict(wrapped)
+            self._core.log_insert(len(self) - 1, dag_val)
 
     def extend(self, values: Any) -> None:
         start_idx = len(self)
         wrapped_values = [
-            wrap_value(v, self._engine, f"{self._name}[{start_idx + i}]")
+            wrap_value(
+                v, self._engine, f"{self._name}[{start_idx + i}]", owner=self._owner
+            )
             for i, v in enumerate(values)
         ]
         super().extend(wrapped_values)
@@ -45,10 +57,18 @@ class TrackedList(list):  # type: ignore[type-arg]
             self._core.log_extend(wrapped_values)
 
     def insert(self, index: int, value: Any) -> None:  # type: ignore[override]
-        wrapped = wrap_value(value, self._engine, f"{self._name}[{index}]")
+        wrapped = wrap_value(
+            value, self._engine, f"{self._name}[{index}]", owner=self._owner
+        )
         super().insert(index, wrapped)
         if not self._is_silent:
-            self._core.log_insert(index, wrapped)
+            # Snapshot for DAG
+            dag_val = wrapped
+            if isinstance(wrapped, list):
+                dag_val = list(wrapped)
+            elif isinstance(wrapped, dict):
+                dag_val = dict(wrapped)
+            self._core.log_insert(index, dag_val)
 
     def pop(self, index: int = -1) -> Any:  # type: ignore[override]
         if index < 0:
@@ -66,7 +86,9 @@ class TrackedList(list):  # type: ignore[type-arg]
 
     def __setitem__(self, index: Any, value: Any) -> None:
         old_value = self[index]
-        wrapped = wrap_value(value, self._engine, f"{self._name}[{index}]")
+        wrapped = wrap_value(
+            value, self._engine, f"{self._name}[{index}]", owner=self._owner
+        )
         super().__setitem__(index, wrapped)
         if not self._is_silent:
             self._core.log_replace(index, old_value, wrapped)
@@ -86,12 +108,12 @@ class TrackedList(list):  # type: ignore[type-arg]
 
 class TrackedDict(dict):  # type: ignore[type-arg]
     def __init__(
-        self, initial_dict: dict[str, Any], engine: TachyonEngine, name: str
+        self, items: dict[str, Any], engine: TachyonEngine, name: str, owner: Any = None
     ) -> None:
-        super().__init__(initial_dict)
+        super().__init__(items)
         self._core = TrackedDictCore(engine, name)
         self._engine = engine
-        self._owner = engine.owner
+        self._owner = owner if owner is not None else getattr(engine, "owner", None)
         self._name = name
         self._silent = False
 
@@ -100,11 +122,30 @@ class TrackedDict(dict):  # type: ignore[type-arg]
         return self._silent or getattr(self._owner, "_restoring", False)
 
     def __setitem__(self, key: Any, value: Any) -> None:
-        old_value = self.get(key)
-        wrapped = wrap_value(value, self._engine, f"{self._name}.{key}")
+        try:
+            old_value = self[key]
+        except KeyError:
+            old_value = None
+
+        wrapped = wrap_value(
+            value, self._engine, f"{self._name}.{key}", owner=self._owner
+        )
         super().__setitem__(key, wrapped)
         if not self._is_silent:
-            self._core.log_update([str(key)], [old_value], [wrapped])
+            # Snapshot for DAG
+            dag_val = wrapped
+            if isinstance(wrapped, list):
+                dag_val = list(wrapped)
+            elif isinstance(wrapped, dict):
+                dag_val = dict(wrapped)
+
+            dag_old = old_value
+            if isinstance(old_value, list):
+                dag_old = list(old_value)
+            elif isinstance(old_value, dict):
+                dag_old = dict(old_value)
+
+            self._core.log_update([str(key)], [dag_old], [dag_val])
 
     def __delitem__(self, key: Any) -> None:
         old_value = self[key]
@@ -122,7 +163,9 @@ class TrackedDict(dict):  # type: ignore[type-arg]
         for k, v in actual_other.items():
             keys.append(str(k))
             old_vals.append(self.get(k))
-            wrapped = wrap_value(v, self._engine, f"{self._name}.{k}")
+            wrapped = wrap_value(
+                v, self._engine, f"{self._name}.{k}", owner=self._owner
+            )
             new_vals.append(wrapped)
             super().__setitem__(k, wrapped)
         if not self._is_silent:
@@ -143,14 +186,13 @@ class TrackedDict(dict):  # type: ignore[type-arg]
             self._core.log_pop(str(key), value)
         return key, value
 
-    def setdefault(self, key: str, default: Any = None) -> Any:
-        if key in self:
-            return self[key]
-        wrapped = wrap_value(default, self._engine, f"{self._name}.{key}")
-        super().__setitem__(key, wrapped)
-        if not self._is_silent:
-            self._core.log_update([str(key)], [None], [wrapped])
-        return wrapped
+    def setdefault(self, key: Any, default: Any = None) -> Any:
+        if key not in self:
+            wrapped = wrap_value(
+                default, self._engine, f"{self._name}.{key}", owner=self._owner
+            )
+            self[key] = wrapped
+        return self[key]
 
     def clear(self) -> None:
         keys = [str(k) for k in self.keys()]
@@ -160,7 +202,7 @@ class TrackedDict(dict):  # type: ignore[type-arg]
             self._core.log_clear(keys, values)
 
 
-def wrap_value(value: Any, engine: TachyonEngine, path: str) -> Any:
+def wrap_value(value: Any, engine: TachyonEngine, path: str, owner: Any = None) -> Any:
     """Recursively wrap containers in Janus proxies."""
     if isinstance(value, (TrackedList, TrackedDict)):
         return value
@@ -176,7 +218,7 @@ def wrap_value(value: Any, engine: TachyonEngine, path: str) -> Any:
         return wrapped
 
     if isinstance(value, list):
-        wrapped_list = TrackedList([], engine, path)
+        wrapped_list = TrackedList([], engine, path, owner=owner)
         wrapped_list._silent = True
         for v in value:
             wrapped_list.append(v)

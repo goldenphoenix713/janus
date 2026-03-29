@@ -11,23 +11,19 @@ try:
 
     def _log_pre_mutation(obj: TrackedDataFrame | TrackedSeries, name: str) -> None:
         root = getattr(obj, "_janus_parent", obj)
-        if hasattr(root, "_janus_engine"):
+        engine = getattr(root, "_janus_engine", None)
+        if engine:
+            # Check if root object is being restored (e.g. during sync_from_root)
+            if getattr(engine.owner, "_restoring", False):
+                return
             # Avoid nested logging: if a snapshot already exists, we are already
             # being tracked by a higher-level operation (like an Indexer).
             if hasattr(root, "_janus_snapshot"):
                 return
 
             snapshot: pd.DataFrame | pd.Series
-            if isinstance(root, pd.DataFrame):
-                snapshot = pd.DataFrame(
-                    root.values.copy(),
-                    index=root.index.copy(),
-                    columns=root.columns.copy(),
-                )
-            elif isinstance(root, pd.Series):
-                snapshot = pd.Series(
-                    root.values.copy(), index=root.index.copy(), name=root.name
-                )
+            if isinstance(root, (pd.DataFrame, pd.Series)):
+                snapshot = root.copy(deep=True)
             else:
                 raise TypeError(f"Unsupported type for snapshot: {type(root)}")
 
@@ -43,23 +39,22 @@ try:
                 return
 
             current: pd.DataFrame | pd.Series
-            if isinstance(root, pd.DataFrame):
-                current = pd.DataFrame(
-                    root.values.copy(),
-                    index=root.index.copy(),
-                    columns=root.columns.copy(),
-                )
-            elif isinstance(root, pd.Series):
-                current = pd.Series(
-                    root.values.copy(), index=root.index.copy(), name=root.name
-                )
+            if isinstance(root, (pd.DataFrame, pd.Series)):
+                current = root.copy(deep=True)
             else:
                 raise TypeError(f"Unsupported type for snapshot: {type(root)}")
+
+            # Get the adapter and calculate compact delta
+            from janus.registry import ADAPTER_REGISTRY
+
+            adapter = ADAPTER_REGISTRY[type(root)]
+            snapshot = getattr(root, "_janus_snapshot")
+            delta = adapter.get_delta(snapshot, current)
 
             root._janus_engine.log_plugin_op(
                 root._janus_name,
                 root._pandas_adapter,
-                (root._janus_snapshot, current),
+                delta,
             )
             # Cleanup
             delattr(root, "_janus_snapshot")
@@ -106,28 +101,34 @@ try:
                 super().__setattr__(key, value)
                 return
 
-            if getattr(self, "_restoring", False):
+            if getattr(self, "_restoring", False) or (
+                hasattr(self, "_janus_engine")
+                and getattr(self._janus_engine.owner, "_restoring", False)
+            ):
                 super().__setattr__(key, value)
                 return
 
             _log_pre_mutation(self, key)
             super().__setattr__(key, value)
-            _log_post_mutation(self, key)
             self._sync_to_parent()
+            _log_post_mutation(self, key)
 
         def __setitem__(self, key: Any, value: Any) -> None:
             if key in [*self._metadata, "_restoring"]:
                 super().__setitem__(key, value)
                 return
 
-            if getattr(self, "_restoring", False):
+            if getattr(self, "_restoring", False) or (
+                hasattr(self, "_janus_engine")
+                and getattr(self._janus_engine.owner, "_restoring", False)
+            ):
                 super().__setitem__(key, value)
                 return
 
             _log_pre_mutation(self, key)
             super().__setitem__(key, value)
-            _log_post_mutation(self, key)
             self._sync_to_parent()
+            _log_post_mutation(self, key)
 
         def _sync_to_parent(self) -> None:
             parent = getattr(self, "_janus_parent", None)
@@ -182,28 +183,34 @@ try:
                 super().__setattr__(key, value)
                 return
 
-            if getattr(self, "_restoring", False):
+            if getattr(self, "_restoring", False) or (
+                hasattr(self, "_janus_engine")
+                and getattr(self._janus_engine.owner, "_restoring", False)
+            ):
                 super().__setattr__(key, value)
                 return
 
             _log_pre_mutation(self, key)
             super().__setattr__(key, value)
-            _log_post_mutation(self, key)
             self._sync_to_parent()
+            _log_post_mutation(self, key)
 
         def __setitem__(self, key: Any, value: Any) -> None:
             if key in [*self._metadata, "_restoring"]:
                 super().__setitem__(key, value)
                 return
 
-            if getattr(self, "_restoring", False):
+            if getattr(self, "_restoring", False) or (
+                hasattr(self, "_janus_engine")
+                and getattr(self._janus_engine.owner, "_restoring", False)
+            ):
                 super().__setitem__(key, value)
                 return
 
             _log_pre_mutation(self, key)
             super().__setitem__(key, value)
-            _log_post_mutation(self, key)
             self._sync_to_parent()
+            _log_post_mutation(self, key)
 
         def _sync_to_parent(self) -> None:
             parent = getattr(self, "_janus_parent", None)
@@ -276,7 +283,10 @@ try:
             return result
 
         def __setitem__(self, key: Any, value: Any) -> None:
-            if getattr(self._parent, "_restoring", False):
+            if getattr(self._parent, "_restoring", False) or (
+                hasattr(self._parent, "_janus_engine")
+                and getattr(self._parent._janus_engine.owner, "_restoring", False)
+            ):
                 self._real_indexer.__setitem__(key, value)
                 return
 
@@ -290,44 +300,72 @@ try:
     @register_adapter(TrackedDataFrame)
     class TrackedDataFrameAdapter(JanusAdapter):
         def get_delta(self, old_snapshot: Any, new_state: Any) -> Any:
-            # In this MVP, the delta object is just (old_df, new_df)
-            return (old_snapshot, new_state.copy())
+            """Calculate sparse column-level delta."""
+            old_delta = {}
+            new_delta = {}
+
+            # Detect changes in existing columns
+            for col in new_state.columns:
+                if col not in old_snapshot.columns or not new_state[col].equals(
+                    old_snapshot[col]
+                ):
+                    # Ensure we store raw pd.Series, not Tracked versions
+                    new_val = new_state[col]
+                    if isinstance(new_val, pd.Series):
+                        new_delta[col] = pd.Series(new_val, copy=True)
+                    else:
+                        new_delta[col] = new_val
+
+                    if col in old_snapshot.columns:
+                        old_val = old_snapshot[col]
+                        old_delta[col] = pd.Series(old_val, copy=True)
+                    else:
+                        old_delta[col] = None  # New column
+
+            # Detect dropped columns
+            for col in old_snapshot.columns:
+                if col not in new_state.columns:
+                    old_delta[col] = pd.Series(old_snapshot[col], copy=True)
+                    new_delta[col] = None
+
+            # Handle index/column name changes if necessary (Omitted for MVP simplicity)
+            return (old_delta, new_delta)
 
         def apply_backward(self, target: Any, delta_blob: Any) -> None:
-            old_df, _ = delta_blob
+            old_cols, _ = delta_blob
             object.__setattr__(target, "_restoring", True)
             try:
-                # Use public iloc assignment which is more robust than _mgr swapping
-                # BaseTrackedIndexer will see _restoring=True and bypass logging.
-                target.iloc[:, :] = old_df.values
-                target.index = old_df.index
-                target.columns = old_df.columns
-            except Exception as e:
-                object.__setattr__(target, "_restoring", False)
-                raise RuntimeError(f"Failed to restore DataFrame: {e}")
+                for col, val in old_cols.items():
+                    if val is None:
+                        if col in target.columns:
+                            del target[col]
+                    else:
+                        target[col] = val
             finally:
                 object.__setattr__(target, "_restoring", False)
 
         def apply_forward(self, target: Any, delta_blob: Any) -> None:
-            _, new_df = delta_blob
+            _, new_cols = delta_blob
             object.__setattr__(target, "_restoring", True)
             try:
-                target.iloc[:, :] = new_df.values
-                target.index = new_df.index
-                target.columns = new_df.columns
-            except Exception as e:
-                raise RuntimeError(f"Failed to restore DataFrame: {e}")
+                for col, val in new_cols.items():
+                    if val is None:
+                        if col in target.columns:
+                            del target[col]
+                    else:
+                        target[col] = val
             finally:
                 object.__setattr__(target, "_restoring", False)
 
         def get_snapshot(self, value: Any) -> Any:
-            return value.copy()
+            # Ensure raw dataframe is returned for serialization
+            return pd.DataFrame(value)
 
     @register_adapter(TrackedSeries)
     class TrackedSeriesAdapter(JanusAdapter):
         def get_delta(self, old_snapshot: Any, new_state: Any) -> Any:
-            # In this MVP, the delta object is just (old_series, new_series)
-            return (old_snapshot, new_state.copy())
+            # Ensure raw series are stored
+            return (pd.Series(old_snapshot), pd.Series(new_state))
 
         def apply_backward(self, target: Any, delta_blob: Any) -> None:
             old_series, _ = delta_blob
@@ -355,7 +393,8 @@ try:
                 object.__setattr__(target, "_restoring", False)
 
         def get_snapshot(self, value: Any) -> Any:
-            return value.copy()
+            # Ensure raw series is returned
+            return pd.Series(value)
 
 except ImportError:
     pass

@@ -31,6 +31,9 @@ if NUMPY_AVAILABLE:
             return
 
         engine = _get_engine(target)
+        if engine and getattr(engine.owner, "_restoring", False):
+            return
+
         parent = getattr(target, "_janus_parent", None)
         root = parent if parent is not None else target
 
@@ -48,6 +51,9 @@ if NUMPY_AVAILABLE:
             return
 
         engine = _get_engine(target)
+        if engine and getattr(engine.owner, "_restoring", False):
+            return
+
         parent = getattr(target, "_janus_parent", None)
         root = parent if parent is not None else target
         initiator = getattr(root, "_janus_initiator", None)
@@ -55,13 +61,16 @@ if NUMPY_AVAILABLE:
         if engine is None or initiator != id(target):
             return
 
-        snapshot = getattr(root, "_janus_snapshot")
+        from janus.registry import ADAPTER_REGISTRY
+
+        adapter = ADAPTER_REGISTRY[type(root)]
         current = root.copy()
+        delta = adapter.get_delta(getattr(root, "_janus_snapshot"), current)
 
         engine.log_plugin_op(
             getattr(root, "_janus_name", "unknown"),
             "NumpyAdapter",
-            (snapshot, current),
+            delta,
         )
 
         delattr(root, "_janus_snapshot")
@@ -112,7 +121,11 @@ if NUMPY_AVAILABLE:
             self._restoring = getattr(obj, "_restoring", False)
 
         def __setitem__(self, key: Any, value: Any) -> None:
-            if self._restoring:
+            if self._restoring or (
+                hasattr(self, "_janus_engine")
+                and self._janus_engine is not None
+                and getattr(self._janus_engine.owner, "_restoring", False)
+            ):
                 super().__setitem__(key, value)
                 return
 

@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use pyo3::types::PyAnyMethods;
+use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -51,6 +51,87 @@ impl Operation {
                 adapter_name: adapter_name.clone(),
                 delta_blob: delta_blob.clone_ref(py),
             },
+        }
+    }
+
+    pub fn to_object(&self, py: Python) -> PyResult<PyObject> {
+        let mut dict = HashMap::<&str, PyObject>::new();
+        match self {
+            Operation::UpdateAttr {
+                name,
+                old_value,
+                new_value,
+            } => {
+                dict.insert("type", "update_attr".into_pyobject(py)?.into());
+                dict.insert("name", name.clone().into_pyobject(py)?.into());
+                dict.insert("old_value", old_value.clone_ref(py));
+                dict.insert("new_value", new_value.clone_ref(py));
+            }
+            Operation::ListOp(lo) => {
+                dict.insert("type", "list_op".into_pyobject(py)?.into());
+                dict.insert("op", lo.to_object(py)?);
+            }
+            Operation::DictOp(do_op) => {
+                dict.insert("type", "dict_op".into_pyobject(py)?.into());
+                dict.insert("op", do_op.to_object(py)?);
+            }
+            Operation::PluginOp {
+                path,
+                adapter_name,
+                delta_blob,
+            } => {
+                dict.insert("type", "plugin_op".into_pyobject(py)?.into());
+                dict.insert("path", path.clone().into_pyobject(py)?.into());
+                dict.insert(
+                    "adapter_name",
+                    adapter_name.clone().into_pyobject(py)?.into(),
+                );
+                dict.insert("delta_blob", delta_blob.clone_ref(py));
+            }
+        }
+        Ok(dict.into_pyobject(py)?.into())
+    }
+
+    pub fn from_object(py: Python, obj: PyObject) -> PyResult<Self> {
+        let dict = obj.bind(py).downcast::<pyo3::types::PyDict>()?;
+        let op_type: String = dict
+            .get_item("type")?
+            .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyKeyError, _>("Missing type"))?
+            .extract()?;
+
+        match op_type.as_str() {
+            "update_attr" => {
+                let name: String = dict.get_item("name")?.unwrap().extract()?;
+                let old_value = dict.get_item("old_value")?.unwrap().unbind();
+                let new_value = dict.get_item("new_value")?.unwrap().unbind();
+                Ok(Operation::UpdateAttr {
+                    name,
+                    old_value,
+                    new_value,
+                })
+            }
+            "list_op" => {
+                let op_obj = dict.get_item("op")?.unwrap().unbind();
+                Ok(Operation::ListOp(ListOperation::from_object(py, op_obj)?))
+            }
+            "dict_op" => {
+                let op_obj = dict.get_item("op")?.unwrap().unbind();
+                Ok(Operation::DictOp(DictOperation::from_object(py, op_obj)?))
+            }
+            "plugin_op" => {
+                let path: String = dict.get_item("path")?.unwrap().extract()?;
+                let adapter_name: String = dict.get_item("adapter_name")?.unwrap().extract()?;
+                let delta_blob = dict.get_item("delta_blob")?.unwrap().unbind();
+                Ok(Operation::PluginOp {
+                    path,
+                    adapter_name,
+                    delta_blob,
+                })
+            }
+            _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "Unknown op type: {}",
+                op_type
+            ))),
         }
     }
 }
@@ -138,6 +219,110 @@ impl ListOperation {
                 path: path.clone(),
                 value: value.clone_ref(py),
             },
+        }
+    }
+
+    pub fn to_object(&self, py: Python) -> PyResult<PyObject> {
+        let mut dict = HashMap::<&str, PyObject>::new();
+        match self {
+            ListOperation::Insert { path, index, value } => {
+                dict.insert("type", "insert".into_pyobject(py)?.into());
+                dict.insert("path", path.clone().into_pyobject(py)?.into());
+                dict.insert("index", index.into_pyobject(py)?.into());
+                dict.insert("value", value.clone_ref(py));
+            }
+            ListOperation::Pop {
+                path,
+                index,
+                popped_value,
+            } => {
+                dict.insert("type", "pop".into_pyobject(py)?.into());
+                dict.insert("path", path.clone().into_pyobject(py)?.into());
+                dict.insert("index", index.into_pyobject(py)?.into());
+                dict.insert("popped_value", popped_value.clone_ref(py));
+            }
+            ListOperation::Replace {
+                path,
+                index,
+                old_value,
+                new_value,
+            } => {
+                dict.insert("type", "replace".into_pyobject(py)?.into());
+                dict.insert("path", path.clone().into_pyobject(py)?.into());
+                dict.insert("index", index.into_pyobject(py)?.into());
+                dict.insert("old_value", old_value.clone_ref(py));
+                dict.insert("new_value", new_value.clone_ref(py));
+            }
+            ListOperation::Clear { path, old_values } => {
+                dict.insert("type", "clear".into_pyobject(py)?.into());
+                dict.insert("path", path.clone().into_pyobject(py)?.into());
+                let old_values_py: Vec<PyObject> =
+                    old_values.iter().map(|v| v.clone_ref(py)).collect();
+                dict.insert("old_values", old_values_py.into_pyobject(py)?.into());
+            }
+            ListOperation::Extend { path, new_values } => {
+                dict.insert("type", "extend".into_pyobject(py)?.into());
+                dict.insert("path", path.clone().into_pyobject(py)?.into());
+                let new_values_py: Vec<PyObject> =
+                    new_values.iter().map(|v| v.clone_ref(py)).collect();
+                dict.insert("new_values", new_values_py.into_pyobject(py)?.into());
+            }
+            ListOperation::Remove { path, value } => {
+                dict.insert("type", "remove".into_pyobject(py)?.into());
+                dict.insert("path", path.clone().into_pyobject(py)?.into());
+                dict.insert("value", value.clone_ref(py));
+            }
+        }
+        Ok(dict.into_pyobject(py)?.into())
+    }
+
+    pub fn from_object(py: Python, obj: PyObject) -> PyResult<Self> {
+        let dict = obj.bind(py).downcast::<pyo3::types::PyDict>()?;
+        let op_type: String = dict.get_item("type")?.unwrap().extract()?;
+        let path: String = dict.get_item("path")?.unwrap().extract()?;
+
+        match op_type.as_str() {
+            "insert" => {
+                let index: usize = dict.get_item("index")?.unwrap().extract()?;
+                let value = dict.get_item("value")?.unwrap().unbind();
+                Ok(ListOperation::Insert { path, index, value })
+            }
+            "pop" => {
+                let index: usize = dict.get_item("index")?.unwrap().extract()?;
+                let popped_value = dict.get_item("popped_value")?.unwrap().unbind();
+                Ok(ListOperation::Pop {
+                    path,
+                    index,
+                    popped_value,
+                })
+            }
+            "replace" => {
+                let index: usize = dict.get_item("index")?.unwrap().extract()?;
+                let old_value = dict.get_item("old_value")?.unwrap().unbind();
+                let new_value = dict.get_item("new_value")?.unwrap().unbind();
+                Ok(ListOperation::Replace {
+                    path,
+                    index,
+                    old_value,
+                    new_value,
+                })
+            }
+            "clear" => {
+                let old_values: Vec<PyObject> = dict.get_item("old_values")?.unwrap().extract()?;
+                Ok(ListOperation::Clear { path, old_values })
+            }
+            "extend" => {
+                let new_values: Vec<PyObject> = dict.get_item("new_values")?.unwrap().extract()?;
+                Ok(ListOperation::Extend { path, new_values })
+            }
+            "remove" => {
+                let value = dict.get_item("value")?.unwrap().unbind();
+                Ok(ListOperation::Remove { path, value })
+            }
+            _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "Unknown list op type: {}",
+                op_type
+            ))),
         }
     }
 }
@@ -245,6 +430,142 @@ impl DictOperation {
             },
         }
     }
+
+    pub fn to_object(&self, py: Python) -> PyResult<PyObject> {
+        let mut dict = HashMap::<&str, PyObject>::new();
+        match self {
+            DictOperation::Clear {
+                path,
+                keys,
+                old_values,
+            } => {
+                dict.insert("type", "clear".into_pyobject(py)?.into());
+                dict.insert("path", path.clone().into_pyobject(py)?.into());
+                dict.insert("keys", keys.clone().into_pyobject(py)?.into());
+                let old_values_py: Vec<PyObject> =
+                    old_values.iter().map(|v| v.clone_ref(py)).collect();
+                dict.insert("old_values", old_values_py.into_pyobject(py)?.into());
+            }
+            DictOperation::Pop {
+                path,
+                key,
+                old_value,
+            } => {
+                dict.insert("type", "pop".into_pyobject(py)?.into());
+                dict.insert("path", path.clone().into_pyobject(py)?.into());
+                dict.insert("key", key.clone().into_pyobject(py)?.into());
+                dict.insert("old_value", old_value.clone_ref(py));
+            }
+            DictOperation::PopItem {
+                path,
+                key,
+                old_value,
+            } => {
+                dict.insert("type", "popitem".into_pyobject(py)?.into());
+                dict.insert("path", path.clone().into_pyobject(py)?.into());
+                dict.insert("key", key.clone().into_pyobject(py)?.into());
+                dict.insert("old_value", old_value.clone_ref(py));
+            }
+            DictOperation::SetDefault { path, key, value } => {
+                dict.insert("type", "setdefault".into_pyobject(py)?.into());
+                dict.insert("path", path.clone().into_pyobject(py)?.into());
+                dict.insert("key", key.clone().into_pyobject(py)?.into());
+                dict.insert("value", value.clone_ref(py));
+            }
+            DictOperation::Update {
+                path,
+                keys,
+                old_values,
+                new_values,
+            } => {
+                dict.insert("type", "update".into_pyobject(py)?.into());
+                dict.insert("path", path.clone().into_pyobject(py)?.into());
+                dict.insert("keys", keys.clone().into_pyobject(py)?.into());
+                let old_values_py: Vec<PyObject> =
+                    old_values.iter().map(|v| v.clone_ref(py)).collect();
+                dict.insert("old_values", old_values_py.into_pyobject(py)?.into());
+                let new_values_py: Vec<PyObject> =
+                    new_values.iter().map(|v| v.clone_ref(py)).collect();
+                dict.insert("new_values", new_values_py.into_pyobject(py)?.into());
+            }
+            DictOperation::Delete {
+                path,
+                key,
+                old_value,
+            } => {
+                dict.insert("type", "delete".into_pyobject(py)?.into());
+                dict.insert("path", path.clone().into_pyobject(py)?.into());
+                dict.insert("key", key.clone().into_pyobject(py)?.into());
+                dict.insert("old_value", old_value.clone_ref(py));
+            }
+        }
+        Ok(dict.into_pyobject(py)?.into())
+    }
+
+    pub fn from_object(py: Python, obj: PyObject) -> PyResult<Self> {
+        let dict = obj.bind(py).downcast::<pyo3::types::PyDict>()?;
+        let op_type: String = dict.get_item("type")?.unwrap().extract()?;
+        let path: String = dict.get_item("path")?.unwrap().extract()?;
+
+        match op_type.as_str() {
+            "clear" => {
+                let keys: Vec<String> = dict.get_item("keys")?.unwrap().extract()?;
+                let old_values: Vec<PyObject> = dict.get_item("old_values")?.unwrap().extract()?;
+                Ok(DictOperation::Clear {
+                    path,
+                    keys,
+                    old_values,
+                })
+            }
+            "pop" => {
+                let key: String = dict.get_item("key")?.unwrap().extract()?;
+                let old_value = dict.get_item("old_value")?.unwrap().unbind();
+                Ok(DictOperation::Pop {
+                    path,
+                    key,
+                    old_value,
+                })
+            }
+            "popitem" => {
+                let key: String = dict.get_item("key")?.unwrap().extract()?;
+                let old_value = dict.get_item("old_value")?.unwrap().unbind();
+                Ok(DictOperation::PopItem {
+                    path,
+                    key,
+                    old_value,
+                })
+            }
+            "setdefault" => {
+                let key: String = dict.get_item("key")?.unwrap().extract()?;
+                let value = dict.get_item("value")?.unwrap().unbind();
+                Ok(DictOperation::SetDefault { path, key, value })
+            }
+            "update" => {
+                let keys: Vec<String> = dict.get_item("keys")?.unwrap().extract()?;
+                let old_values: Vec<PyObject> = dict.get_item("old_values")?.unwrap().extract()?;
+                let new_values: Vec<PyObject> = dict.get_item("new_values")?.unwrap().extract()?;
+                Ok(DictOperation::Update {
+                    path,
+                    keys,
+                    old_values,
+                    new_values,
+                })
+            }
+            "delete" => {
+                let key: String = dict.get_item("key")?.unwrap().extract()?;
+                let old_value = dict.get_item("old_value")?.unwrap().unbind();
+                Ok(DictOperation::Delete {
+                    path,
+                    key,
+                    old_value,
+                })
+            }
+            _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "Unknown dict op type: {}",
+                op_type
+            ))),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -275,32 +596,6 @@ pub struct TachyonEngine {
 
 #[pymethods]
 impl TachyonEngine {
-    #[allow(deprecated)]
-    pub fn get_graph_data(&self, py: Python) -> PyResult<PyObject> {
-        let mut nodes = Vec::new();
-
-        // Build a map of node_id -> Vec<labels>
-        let mut label_map: HashMap<usize, Vec<String>> = HashMap::new();
-        for (label, &id) in &self.branch_labels {
-            label_map.entry(id).or_default().push(label.clone());
-        }
-        for (label, &id) in &self.node_labels {
-            label_map.entry(id).or_default().push(label.clone());
-        }
-
-        for (&id, node) in &self.nodes {
-            let labels = label_map.get(&id).cloned().unwrap_or_default();
-            let mut node_data = HashMap::<&str, PyObject>::new();
-            node_data.insert("id", id.to_object(py));
-            node_data.insert("parents", node.parents.to_object(py));
-            node_data.insert("labels", labels.to_object(py));
-            node_data.insert("is_current", (id == self.current_node).to_object(py));
-            nodes.push(node_data.into_pyobject(py)?);
-        }
-
-        Ok(nodes.into_pyobject(py)?.into())
-    }
-
     #[new]
     pub fn new(owner: Bound<'_, PyAny>, mode: String) -> PyResult<Self> {
         let py = owner.py();
@@ -346,6 +641,202 @@ impl TachyonEngine {
             next_node_id: 1,
             mode,
         })
+    }
+
+    pub fn get_graph_data(&self, py: Python) -> PyResult<PyObject> {
+        let mut nodes_data = Vec::new();
+        for (&id, node) in &self.nodes {
+            let mut node_dict = HashMap::<&str, PyObject>::new();
+            node_dict.insert("id", id.into_pyobject(py)?.to_owned().unbind().into_any());
+            node_dict.insert(
+                "parents",
+                node.parents
+                    .clone()
+                    .into_pyobject(py)?
+                    .to_owned()
+                    .unbind()
+                    .into_any(),
+            );
+            node_dict.insert(
+                "is_current",
+                (id == self.current_node)
+                    .into_pyobject(py)?
+                    .to_owned()
+                    .unbind()
+                    .into_any(),
+            );
+            let mut labels = Vec::new();
+            for (label, &nid) in &self.node_labels {
+                if nid == id {
+                    labels.push(label.clone());
+                }
+            }
+            node_dict.insert(
+                "labels",
+                labels.into_pyobject(py)?.to_owned().unbind().into_any(),
+            );
+            nodes_data.push(node_dict.into_pyobject(py)?);
+        }
+
+        // Include root node if it has labels and current node is root
+        if !self.nodes.contains_key(&0) {
+            let mut root_dict = HashMap::<&str, PyObject>::new();
+            root_dict.insert(
+                "id",
+                0usize.into_pyobject(py)?.to_owned().unbind().into_any(),
+            );
+            root_dict.insert(
+                "parents",
+                Vec::<usize>::new()
+                    .into_pyobject(py)?
+                    .to_owned()
+                    .unbind()
+                    .into_any(),
+            );
+            root_dict.insert(
+                "is_current",
+                (self.current_node == 0)
+                    .into_pyobject(py)?
+                    .to_owned()
+                    .unbind()
+                    .into_any(),
+            );
+
+            let mut labels = Vec::new();
+            for (label, &nid) in &self.node_labels {
+                if nid == 0 {
+                    labels.push(label.clone());
+                }
+            }
+            root_dict.insert(
+                "labels",
+                labels.into_pyobject(py)?.to_owned().unbind().into_any(),
+            );
+            nodes_data.push(root_dict.into_pyobject(py)?);
+        }
+
+        Ok(nodes_data.into_pyobject(py)?.into())
+    }
+
+    pub fn get_graph_state(&self, py: Python) -> PyResult<PyObject> {
+        let mut state = HashMap::<&str, PyObject>::new();
+
+        // 1. Nodes
+        let mut nodes_list = Vec::new();
+        for (&id, node) in &self.nodes {
+            let mut n_dict = HashMap::<&str, PyObject>::new();
+            n_dict.insert("id", id.into_pyobject(py)?.into());
+            n_dict.insert("parents", node.parents.clone().into_pyobject(py)?.into());
+            n_dict.insert("timestamp", node.timestamp.into_pyobject(py)?.into());
+
+            // Metadata
+            let mut meta_dict = HashMap::<String, PyObject>::new();
+            for (k, v) in &node.metadata {
+                meta_dict.insert(k.clone(), v.clone_ref(py));
+            }
+            n_dict.insert("metadata", meta_dict.into_pyobject(py)?.into());
+
+            // Deltas
+            let mut deltas_list = Vec::new();
+            for op in &node.deltas {
+                deltas_list.push(op.to_object(py)?);
+            }
+            n_dict.insert("deltas", deltas_list.into_pyobject(py)?.into());
+
+            nodes_list.push(n_dict.into_pyobject(py)?);
+        }
+        state.insert("nodes", nodes_list.into_pyobject(py)?.into());
+
+        // 2. Head/Branch state
+        state.insert(
+            "active_branch",
+            self.active_branch.clone().into_pyobject(py)?.into(),
+        );
+        state.insert("current_node", self.current_node.into_pyobject(py)?.into());
+        state.insert("next_node_id", self.next_node_id.into_pyobject(py)?.into());
+        state.insert(
+            "branch_labels",
+            self.branch_labels.clone().into_pyobject(py)?.into(),
+        );
+        state.insert(
+            "node_labels",
+            self.node_labels.clone().into_pyobject(py)?.into(),
+        );
+        state.insert(
+            "mode",
+            match self.mode {
+                Mode::Linear => "linear",
+                Mode::Multiversal => "multiversal",
+            }
+            .into_pyobject(py)?
+            .into(),
+        );
+
+        Ok(state.into_pyobject(py)?.into())
+    }
+
+    pub fn set_graph_state(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        let dict = state.bind(py).downcast::<pyo3::types::PyDict>()?;
+
+        // 1. Clear current state
+        self.nodes.clear();
+        self.branch_labels.clear();
+        self.node_labels.clear();
+
+        // 2. Load Nodes
+        let nodes_list: Vec<Bound<PyDict>> = dict.get_item("nodes")?.unwrap().extract()?;
+        for n_dict in nodes_list {
+            let id: usize = n_dict.get_item("id")?.unwrap().extract()?;
+            let parents: Vec<usize> = n_dict.get_item("parents")?.unwrap().extract()?;
+            let timestamp: u64 = n_dict.get_item("timestamp")?.unwrap().extract()?;
+
+            let meta_dict_py: Bound<PyDict> = n_dict
+                .get_item("metadata")?
+                .unwrap()
+                .downcast::<PyDict>()?
+                .clone();
+            let mut metadata = HashMap::new();
+            for (k, v) in meta_dict_py {
+                metadata.insert(k.extract::<String>()?, v.unbind());
+            }
+
+            let deltas_list: Vec<PyObject> = n_dict.get_item("deltas")?.unwrap().extract()?;
+            let mut deltas = Vec::new();
+            for op_obj in deltas_list {
+                deltas.push(Operation::from_object(py, op_obj)?);
+            }
+
+            self.nodes.insert(
+                id,
+                StateNode {
+                    id,
+                    parents,
+                    deltas,
+                    metadata,
+                    timestamp,
+                },
+            );
+        }
+
+        // 3. Global State
+        self.active_branch = dict.get_item("active_branch")?.unwrap().extract()?;
+        self.current_node = dict.get_item("current_node")?.unwrap().extract()?;
+        self.next_node_id = dict.get_item("next_node_id")?.unwrap().extract()?;
+        self.branch_labels = dict.get_item("branch_labels")?.unwrap().extract()?;
+        self.node_labels = dict.get_item("node_labels")?.unwrap().extract()?;
+
+        let mode_str: String = dict.get_item("mode")?.unwrap().extract()?;
+        self.mode = match mode_str.as_str() {
+            "linear" => Mode::Linear,
+            "multiversal" => Mode::Multiversal,
+            _ => {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "Invalid mode",
+                ))
+            }
+        };
+
+        Ok(())
     }
 
     #[getter]
@@ -912,6 +1403,46 @@ impl TachyonEngine {
         Ok(())
     }
 
+    pub fn move_to_node_id(&mut self, py: Python, node_id: usize) -> PyResult<()> {
+        let owner = self.upgrade_owner(py)?;
+        owner.setattr("_restoring", true)?;
+
+        let (path_up, path_down) = self.get_shortest_path(self.current_node, node_id);
+
+        // 1. Move UP to LCA (apply backwards)
+        for nid in path_up {
+            if let Some(node) = self.nodes.get(&nid) {
+                self.apply_node_deltas(py, node, false)?;
+            }
+        }
+
+        // 2. Move DOWN to target (apply forwards)
+        for nid in path_down {
+            if let Some(node) = self.nodes.get(&nid) {
+                self.apply_node_deltas(py, node, true)?;
+            }
+        }
+
+        self.current_node = node_id;
+        owner.setattr("_restoring", false)?;
+        Ok(())
+    }
+
+    pub fn sync_from_root(&mut self, py: Python) -> PyResult<()> {
+        let owner = self.upgrade_owner(py)?;
+        owner.setattr("_restoring", true)?;
+
+        let path = self.get_root_to_node_path(self.current_node);
+        for nid in path {
+            if let Some(node) = self.nodes.get(&nid) {
+                self.apply_node_deltas(py, node, true)?;
+            }
+        }
+
+        owner.setattr("_restoring", false)?;
+        Ok(())
+    }
+
     #[pyo3(signature = (source_label, strategy = "overshadow"))]
     pub fn merge_branch(
         &mut self,
@@ -1411,31 +1942,6 @@ impl TachyonEngine {
         let path_down: Vec<usize> = to_path[lca_idx + 1..].to_vec();
 
         (path_up, path_down)
-    }
-
-    fn move_to_node_id(&mut self, py: Python, node_id: usize) -> PyResult<()> {
-        let owner = self.upgrade_owner(py)?;
-        owner.setattr("_restoring", true)?;
-
-        let (path_up, path_down) = self.get_shortest_path(self.current_node, node_id);
-
-        // 1. Move UP to LCA (apply backwards)
-        for node_id in path_up {
-            if let Some(node) = self.nodes.get(&node_id) {
-                self.apply_node_deltas(py, node, false)?;
-            }
-        }
-
-        // 2. Move DOWN to target (apply forwards)
-        for node_id in path_down {
-            if let Some(node) = self.nodes.get(&node_id) {
-                self.apply_node_deltas(py, node, true)?;
-            }
-        }
-
-        owner.setattr("_restoring", false)?;
-        self.current_node = node_id;
-        Ok(())
     }
 
     fn get_root_to_node_path(&self, node_id: usize) -> Vec<usize> {
