@@ -143,11 +143,11 @@ sim.prune()
 
 ## 📚 Documentation
 
-The full documentation is available at [janus.readthedocs.io](https://janus.readthedocs.io).
+The full documentation is available at [janustachyon-rs.readthedocs.io](https://janustachyon-rs.readthedocs.io/en/latest/).
 
-- [Getting Started](https://janus.readthedocs.io/en/latest/getting_started.html)
-- [API Reference](https://janus.readthedocs.io/en/latest/api/index.html)
-- [Architecture Deep Dive](https://janus.readthedocs.io/en/latest/architecture/index.html)
+- [Getting Started](https://janustachyon-rs.readthedocs.io/en/latest/getting_started.html)
+- [API Reference](https://janustachyon-rs.readthedocs.io/en/latest/api/index.html)
+- [Architecture Deep Dive](https://janustachyon-rs.readthedocs.io/en/latest/architecture/index.html)
 - [Contributing Guide](CONTRIBUTING.md)
 
 ## ⚡ Powered by Tachyon-RS
