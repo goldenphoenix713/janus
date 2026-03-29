@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import zipfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import msgpack
 
@@ -42,10 +42,10 @@ def janus_encoder(obj: Any) -> Any:
 
     dict_cls = CONTAINER_REGISTRY.get("dict")
     if dict_cls and isinstance(obj, dict_cls):
-        return dict(obj)  # type: ignore[call-overload]
+        return dict(cast("dict[Any, Any]", obj))
     list_cls = CONTAINER_REGISTRY.get("list")
     if list_cls and isinstance(obj, list_cls):
-        return list(obj)  # type: ignore[call-overload]
+        return list(cast("list[Any]", obj))
 
     return obj
 

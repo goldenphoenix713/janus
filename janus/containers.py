@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, SupportsIndex
 
 from janus.logger import logger
 from janus.registry import CONTAINER_REGISTRY, wrap_value
 from janus.tachyon_rs import TachyonEngine, TrackedDictCore, TrackedListCore
 
 
-class TrackedList(list):  # type: ignore[type-arg]
+class TrackedList(list[Any]):
     """
     A list subclass that automatically logs mutations to the Janus engine.
 
@@ -69,9 +69,9 @@ class TrackedList(list):  # type: ignore[type-arg]
                 f"TrackedList ({self._name}) extended with {len(values)} items"
             )
 
-    def insert(self, index: int, value: Any) -> None:  # type: ignore[override]
+    def insert(self, index: SupportsIndex, value: Any) -> None:
         wrapped = wrap_value(
-            value, self._engine, f"{self._name}[{index}]", owner=self._owner
+            value, self._engine, f"{self._name}[{int(index)}]", owner=self._owner
         )
         super().insert(index, wrapped)
         if not self._is_silent:
@@ -81,15 +81,17 @@ class TrackedList(list):  # type: ignore[type-arg]
                 dag_val = list(wrapped)
             elif isinstance(wrapped, dict):
                 dag_val = dict(wrapped)
-            self._core.log_insert(index, dag_val)
+            self._core.log_insert(int(index), dag_val)
 
-    def pop(self, index: int = -1) -> Any:  # type: ignore[override]
-        if index < 0:
-            index = len(self) + index
-        value = super().pop(index)
+    def pop(self, index: SupportsIndex = -1) -> Any:
+        # Convert index to int to perform arithmetic
+        int_index = int(index)
+        if int_index < 0:
+            int_index = len(self) + int_index
+        value = super().pop(int_index)
         if not self._is_silent:
-            self._core.log_pop(index, value)
-            logger.trace(f"TrackedList ({self._name}) popped item at {index}")
+            self._core.log_pop(int_index, value)
+            logger.trace(f"TrackedList ({self._name}) popped item at {int_index}")
         return value
 
     def clear(self) -> None:
@@ -120,7 +122,7 @@ class TrackedList(list):  # type: ignore[type-arg]
             self._core.log_pop(index, value)
 
 
-class TrackedDict(dict):  # type: ignore[type-arg]
+class TrackedDict(dict[Any, Any]):
     """
     A dict subclass that automatically logs mutations to the Janus engine.
 
