@@ -46,7 +46,7 @@ numpy = [
 ]
 
 [tool.maturin]
-features = ["pyo3/abi3-py311", "pyo3/generate-import-lib"]
+features = ["pyo3/abi3-py311"]
 module-name = "janus.tachyon_rs"
 include = ["src/**/*", "Cargo.toml"]
 
