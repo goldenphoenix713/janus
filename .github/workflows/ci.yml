@@ -54,9 +54,6 @@ jobs:
       - name: Install Dependencies
         run: uv sync --extra docs
 
-      - name: Build Janus (Maturin)
-        run: uv run maturin develop
-
       - name: Build Docs (Sphinx)
         run: uv run sphinx-build -b html docs/source docs/build/html -W --keep-going
 
@@ -85,9 +82,6 @@ jobs:
 
       - name: Install Python Dependencies
         run: uv sync --all-extras
-
-      - name: Build Janus (Maturin)
-        run: uv run maturin develop
 
       - name: Run PyTest
         run: uv run pytest tests/ -v
