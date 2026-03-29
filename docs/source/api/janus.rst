@@ -27,6 +27,7 @@ janus.options module
    :members:
    :show-inheritance:
    :undoc-members:
+   :no-index:
 
 janus.persistence module
 ------------------------
@@ -75,10 +76,3 @@ janus.viz\_mpl module
    :members:
    :show-inheritance:
    :undoc-members:
-
-Module contents
----------------
-
-.. automodule:: janus
-   :show-inheritance:
-   :exclude-members: options, containers, pandas, numpy

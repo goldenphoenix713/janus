@@ -3,7 +3,7 @@ requires = ["maturin>=1.5,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "janus"
+name = "janus-tachyon-rs"
 version = "0.2.0"
 description = "Extensible, non-linear state travel powered by the Tachyon-RS engine."
 authors = [{ name = "AI Dev Team", email = "dev@example.com" }]

@@ -1,0 +1,60 @@
+Running Sphinx v9.1.0
+loading translations [en]... done
+making output directory... done
+myst v5.0.0: MdParserConfig(commonmark_only=False, gfm_only=False, enable_extensions={'tasklist', 'replacements', 'strikethrough', 'html_image', 'substitution', 'html_admonition', 'colon_fence', 'fieldlist', 'smartquotes', 'deflist', 'linkify', 'dollarmath', 'amsmath'}, disable_syntax=[], all_links_external=False, links_external_new_tab=False, url_schemes=('http', 'https', 'mailto', 'ftp'), ref_domains=None, fence_as_directive=set(), number_code_blocks=[], title_to_header=False, heading_anchors=3, heading_slug_func=None, html_meta={}, footnote_sort=True, footnote_transition=True, words_per_minute=200, substitutions={}, linkify_fuzzy_links=True, dmath_allow_labels=True, dmath_allow_space=True, dmath_allow_digits=True, dmath_double_inline=False, update_mathjax=True, mathjax_classes='tex2jax_process|mathjax_process|math|output_area', enable_checkboxes=False, suppress_warnings=[], highlight_code_blocks=True)
+building [mo]: targets for 0 po files that are out of date
+writing output...
+building [html]: targets for 8 source files that are out of date
+updating environment: [new config] 8 added, 0 changed, 0 removed
+reading sources... [ 12%] api/index
+reading sources... [ 25%] api/janus
+reading sources... [ 38%] api/janus.plugins
+reading sources... [ 50%] architecture/blueprint
+reading sources... [ 62%] architecture/index
+reading sources... [ 75%] architecture/technical_deep_dive
+reading sources... [ 88%] getting_started
+reading sources... [100%] index
+
+looking for now-outdated files... none found
+pickling environment... done
+checking consistency... done
+preparing documents... done
+copying assets...
+copying static files...
+Writing evaluated template result to /Users/eddie/python_projects/janus/docs/build/html/_static/basic.css
+Writing evaluated template result to /Users/eddie/python_projects/janus/docs/build/html/_static/language_data.js
+Writing evaluated template result to /Users/eddie/python_projects/janus/docs/build/html/_static/documentation_options.js
+Writing evaluated template result to /Users/eddie/python_projects/janus/docs/build/html/_static/js/versions.js
+copying static files: done
+copying extra files...
+copying extra files: done
+copying assets: done
+writing output... [ 12%] api/index
+writing output... [ 25%] api/janus
+writing output... [ 38%] api/janus.plugins
+writing output... [ 50%] architecture/blueprint
+writing output... [ 62%] architecture/index
+writing output... [ 75%] architecture/technical_deep_dive
+writing output... [ 88%] getting_started
+writing output... [100%] index
+
+generating indices... genindex py-modindex done
+highlighting module code... [  8%] builtins
+highlighting module code... [ 17%] janus.base
+highlighting module code... [ 25%] janus.containers
+highlighting module code... [ 33%] janus.options
+highlighting module code... [ 42%] janus.persistence
+highlighting module code... [ 50%] janus.plugins.numpy
+highlighting module code... [ 58%] janus.plugins.pandas
+highlighting module code... [ 67%] janus.plugins.utils
+highlighting module code... [ 75%] janus.registry
+highlighting module code... [ 83%] janus.utils
+highlighting module code... [ 92%] janus.viz
+highlighting module code... [100%] janus.viz_mpl
+
+writing additional pages... search done
+dumping search index in English (code: en)... done
+dumping object inventory... done
+build succeeded.
+
+The HTML pages are in docs/build/html.

@@ -455,7 +455,7 @@ wheels = [
 ]
 
 [[package]]
-name = "janus"
+name = "janus-tachyon-rs"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
