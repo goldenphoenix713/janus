@@ -1,3 +1,7 @@
+import matplotlib as mpl
+
+mpl.use("Agg")  # Use non-interactive backend to avoid Tk dependency on Windows CI
+
 import matplotlib.pyplot as plt
 import pytest
 from matplotlib.figure import Figure
