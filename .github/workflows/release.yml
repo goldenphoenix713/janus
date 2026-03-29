@@ -105,9 +105,14 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          parent-directory: dist
+          python-version: '3.12'
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
           merge-multiple: true
       - name: Publish to PyPI
         uses: PyO3/maturin-action@v1
