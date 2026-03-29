@@ -50,8 +50,8 @@ numpy = [
 ]
 
 [tool.maturin]
+features = ["pyo3/abi3-py311"]
 module-name = "janus.tachyon_rs"
-features = ["pyo3/extension-module"]
 include = ["src/**/*", "Cargo.toml"]
 
 [tool.ruff]
