@@ -13,9 +13,9 @@ else:
 
 # -- Project information -----------------------------------------------------
 project = "Janus"
-copyright = f"{datetime.now().year}, AI Dev Team"
-author = "AI Dev Team"
-release = "0.2.0"
+copyright = f"{datetime.now().year}, Eduardo J. Ruiz"
+author = "Eduardo J. Ruiz"
+release = "0.2.1"
 
 # -- General configuration ---------------------------------------------------
 extensions = [

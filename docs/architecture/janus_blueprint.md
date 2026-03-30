@@ -62,9 +62,9 @@ build-backend = "maturin"
 
 [project]
 name = "janus"
-version = "0.2.0"
+version = "0.2.1"
 description = "Extensible, non-linear state travel powered by the Tachyon-RS engine."
-authors = [{ name = "AI Dev Team", email = "dev@example.com" }]
+authors = [{ name = "Eduardo J. Ruiz", email = "eduardo.j.ruiz@gmail.com" }]
 requires-python = ">=3.12"
 dependencies = []
 readme = "README.md"
@@ -81,7 +81,7 @@ include = ["src/**/*", "Cargo.toml"]
 ```toml
 [package]
 name = "tachyon-rs"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 

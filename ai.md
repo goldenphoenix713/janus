@@ -13,7 +13,7 @@
 | **Name** | Janus |
 | **Package Name (PyPI)** | `janus` |
 | **Crate Name (crates.io)** | `tachyon-rs` |
-| **Version** | `0.2.0` |
+| **Version** | `0.2.1` |
 | **License** | MIT OR Apache-2.0 (dual-licensed) |
 | **Python** | `>= 3.12` |
 | **Rust Edition** | `2021` |
