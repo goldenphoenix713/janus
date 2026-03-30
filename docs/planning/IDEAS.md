@@ -44,17 +44,17 @@ This document serves as a repository for nascent ideas, experimental features, a
 
 ---
 
-## 🗜️ 3. Node Squashing (Logical Compression)
+## 🗜️ 3. Node Squashing (Logical Compression) [✅]
 
 **Concept**: A mechanism to "squash" or compress a contiguous sequence of state nodes into a single, logical composite node.
 
 **Potential Features**:
 
-- **Transaction-like Grouping**: Merge multiple micro-operations (e.g., field updates in a loop) into a single "macro" state change.
-- **Noise Reduction**: Flatten the state DAG by replacing intermediate, non-viable nodes with a single net-change result.
-- **Revert-to-Group**: Switching to a squashed node instantly restores the object to the end-state of the grouping.
-- **Storage Optimization**: Potentially simplify deltas by calculating the net difference between the start and end of the squash sequence.
-- **Implementation Note**: This could involve a `squash()` method that identifies a parent-child chain and replaces it with a new `SquashedNode` containing the accumulated deltas.
+- [x] **Transaction-like Grouping**: Merge multiple micro-operations (e.g., field updates in a loop) into a single "macro" state change.
+- [x] **Noise Reduction**: Flatten the state DAG by replacing intermediate, non-viable nodes with a single net-change result.
+- [x] **Revert-to-Group**: Switching to a squashed node instantly restores the object to the end-state of the grouping.
+- [x] **Storage Optimization**: Potentially simplify deltas by calculating the net difference between the start and end of the squash sequence.
+- [x] **Implementation Note**: This involves a `squash()` method that identifies a parent-child chain and replaces it with a new node containing the accumulated deltas.
 
 ---
 
@@ -73,19 +73,19 @@ This document serves as a repository for nascent ideas, experimental features, a
 
 ---
 
-## 🏗️ 5. Branch Merging & Conflict Resolution
+## 🏗️ 5. Branch Merging & Conflict Resolution [✅]
 
 **Concept**: A mechanism to merge two disparate state branches back into a single, unified history—integrating the net changes of both paths.
 
 **Potential Features**:
 
-- **Conflict Detection**: Identify when two branches modified the same attribute or list index with incompatible values.
-- **3-Way Merging**: Use the "Common Ancestor" node as a reference point to calculate the relative changes from both branches.
-- **Merge Strategies**:
-  - **Fast-Forward**: Move the parent tip directly to the child tip if no intermediate changes occurred.
-  - **Resolution Policies**: Support for "Always Take A", "Always Take B", or custom callback functions to handle specific field conflicts.
-- **Multi-Parent History**: Support for nodes with multiple parents, formalizing the history structure into a true Directed Acyclic Graph (DAG).
-- **Implementation Note**: This would require updating the `StateNode` structure in Rust to support a `parents: Vec<usize>` field, enabling the engine to track the confluence of state lineages.
+- [x] **Conflict Detection**: Identify when two branches modified the same attribute or list index with incompatible values.
+- [x] **3-Way Merging**: Use the "Common Ancestor" node as a reference point to calculate the relative changes from both branches.
+- [x] **Merge Strategies**:
+  - [x] **Fast-Forward**: Move the parent tip directly to the child tip if no intermediate changes occurred.
+  - [x] **Resolution Policies**: Support for "Always Take A", "Always Take B", or custom callback functions to handle specific field conflicts.
+- [x] **Multi-Parent History**: Support for nodes with multiple parents, formalizing the history structure into a true Directed Acyclic Graph (DAG).
+- [x] **Implementation Note**: Updated the `StateNode` structure in Rust to support a `parents: Vec<usize>` field, enabling the engine to track the confluence of state lineages.
 
 ---
 
@@ -101,27 +101,27 @@ This document serves as a repository for nascent ideas, experimental features, a
 
 ---
 
-## 💾 7. State Persistence & Serialization
+## 💾 7. State Persistence & Serialization [✅]
 
 **Concept**: Making the state DAG persistent across process restarts, enabling long-term "save games" or historical auditing.
 
 **Potential Features**:
 
-- **DAG Export**: Serialize the entire Node/Edge/Delta structure to JSON or a high-performance binary format (e.g., Protobuf or FlatBuffers).
-- **Incremental Loading**: Load only the "active" branch to save memory, fetching older nodes from disk on demand.
-- **Audit Trails**: Non-repudiable logs of object state changes for security or compliance.
+- [x] **DAG Export**: Serialize the entire Node/Edge/Delta structure to JSON or a high-performance binary format (e.g., MsgPack).
+- [x] **Audit Trails**: Non-repudiable logs of object state changes for security or compliance.
+- [ ] **Incremental Loading**: Load only the "active" branch to save memory, fetching older nodes from disk on demand.
 
 ---
 
-## 🔍 8. Diff-Query Language (Tachyon-QL)
+## 🔍 8. Diff-Query Language (Tachyon-QL) [⏳]
 
 **Concept**: A query interface to search through an object's history based on attribute values or state changes.
 
 **Potential Features**:
 
-- **State Search**: `find nodes where hp < 20 and is_poisoned == True`.
-- **Temporal Diffs**: `compare hp at node_A with hp at node_B`.
-- **Event Triggers**: "Watch" an attribute and trigger a branch creation when a specific condition is met (e.g., a "Guard" mechanism inside the engine).
+- [x] **State Search**: `find nodes where hp < 20 and is_poisoned == True` (via `find_moments`).
+- [x] **Temporal Diffs**: `compare hp at node_A with hp at node_B` (via `diff`).
+- [ ] **Event Triggers**: "Watch" an attribute and trigger a branch creation when a specific condition is met (e.g., a "Guard" mechanism inside the engine).
 
 ---
 
