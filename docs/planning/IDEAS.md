@@ -1,197 +1,316 @@
 # Janus Ideas & Scratchpad 💡
 
-This document serves as a repository for nascent ideas, experimental features, and future visions for the Janus project that are not yet part of the formal roadmap.
+This document serves as a repository for nascent ideas, experimental features, and future visions for the Janus project.
 
 ---
 
-## 🗺️ 1. Visual Timeline & Graph Explorer
+## 🛠️ 1. Core State Mechanics
 
-**Concept**: A dedicated UI (CLI-based or IDE-integrated) to interactively traverse the state DAG of an object.
+Focuses on the fundamental physics of the "Tachyon" engine.
 
-**Potential Features**:
+### 1.1 Branch Merging & Conflict Resolution [✅]
 
-- **Interactive DAG Visualization**: Render the branching history of an object as a graph.
-- **State Inspect**: Click any node to see a "diff" of what changed at that point in time.
-- **Time-Travel Scrubbing**: A slider to move back and forth through a linear timeline or across branches.
-- **Branch Comparison**: Side-by-side comparison of two different state branches.
-- **Integration**: A Jupyter Lab extension to visualize the multiverse of a specific variable.
+- **Complexity**: High
+- **Status**: Completed (Core merging logic implemented)
+- **Summary**: A mechanism to merge two disparate state branches back into a single, unified history—integrating the net changes of both paths using 3-way merging.
+- **Implementation Vision**: Deep integration in `reconcile.rs` using common ancestor detection and policy-based resolution (e.g., "Always Take A", "Always Take B").
 
----
+### 1.2 Async-Aware State
 
-## 🧪 Future Brainstorming
+- **Complexity**: Medium/High
+- **Status**: Idea
+- **Summary**: Tracking state across asynchronous task boundaries (e.g., Python `asyncio` or Tokio threads).
+- **Implementation Vision**: Use `ContextVar` in Python or thread-local storage to track context IDs, ensuring the `TachyonEngine` can map operations to the correct logical branch across async calls.
 
-- **Async-Aware State**: Tracking state across asynchronous task boundaries.
-- **Distributed Tachyon**: Synchronizing state DAGs across multiple machines for distributed simulations.
-- **Policy-Based Auto-Pruning (Opt-In)**: An optional memory management system for state history.
-  - **Concept**: A configurable "cache" for state nodes and branches, allowing the engine to respect memory or node count limits.
-  - **Toggle-Based**: Remains disabled by default to avoid unexpected data loss.
-  - **Pruning Strategies**: Support for standard caching algorithms (LRU, LFU, FIFO) to determine which non-essential branches or nodes should be discarded first.
-  - **Size Limits**: Define a hard cap on the number of nodes or estimated memory usage (e.g., "keep only the last 10,000 nodes across all branches").
+### 1.3 Asynchronous "Tester" Branches & State Selection
 
----
+- **Complexity**: Medium
+- **Status**: Idea
+- **Summary**: Spawning parallel branches that perform experiments and report results back to a parent for selection.
+- **Implementation Vision**: Child branches report success metrics to a new "metadata" field in the parent `StateNode` in `models.rs`, allowing for parent-led promotion or "Selective Pull" of specific data points.
 
-## ❄️ 2. Frozen Branches (Failed-State Archiving)
+### 1.4 Rebasing & Cherry-picking
 
-**Concept**: The ability to "freeze" a branch that is no longer considered viable but remains useful for reference.
+- **Complexity**: High
+- **Status**: Idea
+- **Summary**: Moving or replaying a sequence of state deltas from one branch tip to another.
+- **Implementation Vision**: A `rebase()` operation that identifies a range of nodes, calculates their net deltas, and "re-logs" them onto a new target parent node, optionally handling conflicts.
 
-**Potential Features**:
+### 1.5 State Inversion (Reverting)
 
-- **Read-Only Status**: Frozen branches cannot be modified by new operations but can be traversed and compared against.
-- **Experimental Markers**: Tag a branch with the reason for failure (e.g., "Performance Bottleneck", "Converged to Local Minimum").
-- **Referential Comparison**: Use a frozen branch as a "ghost" baseline to inform actions on other active branches.
-- **Thaw Operation**: Re-enable a frozen branch if the original experimental path needs to be reconsidered or resumed.
-- **Implementation Note**: This could be implemented as a lightweight metadata attribute in the engine's branch registry, preventing new `log_op` calls from targeting the frozen branch's leaf node.
+- **Complexity**: Medium
+- **Status**: Idea
+- **Summary**: Creating a new node that mathematically negates a previous node's deltas (e.g., undoing a specific change while moving forward in history).
+- **Implementation Vision**: Adding a `revert(node_id)` method that iterates through a node's `deltas` and generates inverse operations (e.g., swapping `old_value` and `new_value`).
 
----
+### 1.6 Reactive State & Hooks
 
-## 🗜️ 3. Node Squashing (Logical Compression) [✅]
-
-**Concept**: A mechanism to "squash" or compress a contiguous sequence of state nodes into a single, logical composite node.
-
-**Potential Features**:
-
-- [x] **Transaction-like Grouping**: Merge multiple micro-operations (e.g., field updates in a loop) into a single "macro" state change.
-- [x] **Noise Reduction**: Flatten the state DAG by replacing intermediate, non-viable nodes with a single net-change result.
-- [x] **Revert-to-Group**: Switching to a squashed node instantly restores the object to the end-state of the grouping.
-- [x] **Storage Optimization**: Potentially simplify deltas by calculating the net difference between the start and end of the squash sequence.
-- [x] **Implementation Note**: This involves a `squash()` method that identifies a parent-child chain and replaces it with a new node containing the accumulated deltas.
+- **Complexity**: Medium/High
+- **Status**: Idea
+- **Summary**: Support for state-triggered callbacks and pre-commit validation hooks.
+- **Implementation Vision**: A registration system where users can "watch" specific attributes or branch operations, triggering Python callbacks or Rust-side validation logic during `log_op`.
 
 ---
 
-## 🧪 4. Asynchronous "Tester" Branches & State Selection
+## 🗜️ 2. DAG Optimization & Lifecycle
 
-**Concept**: Utilizing branches as parallel experiments that perform different operations and report results back to a primary parent node for selection.
+Managing the health and size of the state graph.
 
-**Potential Features**:
+### 2.1 Node Squashing (Logical Compression) [✅]
 
-- **Parallel Experimentation**: Spawn multiple "tester" branches to explore different algorithmic paths or parameter sets simultaneously.
-- **Upstream Result Reporting**: Mechanism for child branches to report success metrics or refined state data back to their common ancestor.
-- **Parent-Led Selection**: The parent node can "adopt" or promote the state of the most viable tester branch while preserving others for reference.
-- **Reference Retention**: Keep non-selected branches as "frozen" historical data to inform future decisions.
-- **Upstream Migration**: Implementation of a "Selective Pull" to move specific data points from a child node back to a parent without requiring a full branch switch or merge.
-- **Implementation Note**: This would require a "Callback" or "Event" system in the engine where nodes can track metadata about their descendants' outcomes.
+- **Complexity**: Medium
+- **Status**: Completed
+- **Summary**: Merging a contiguous sequence of state nodes into a single composite node to reduce noise and optimize storage.
+- **Implementation Vision**: `squash()` method in `engine.rs` identifies parent-child chains and collapses them into a new node containing accumulated deltas.
 
----
+### 2.2 Frozen Branches
 
-## 🏗️ 5. Branch Merging & Conflict Resolution [✅]
+- **Complexity**: Low
+- **Status**: Idea
+- **Summary**: The ability to "freeze" a branch, preventing further modifications while keeping it for reference.
+- **Implementation Vision**: Lightweight `is_frozen` metadata attribute in the branch registry to block `log_op` calls at the engine level.
 
-**Concept**: A mechanism to merge two disparate state branches back into a single, unified history—integrating the net changes of both paths.
+### 2.3 Policy-Based Auto-Pruning
 
-**Potential Features**:
+- **Complexity**: Medium
+- **Status**: Idea
+- **Summary**: Configurable memory management to discard non-essential branches or old nodes based on LRU/LFU strategies.
+- **Implementation Vision**: A background task or hook in `log_op` that triggers pruning when memory limits are reached, removing branch leaf nodes while optionally preserving "frozen" or "archived" paths.
 
-- [x] **Conflict Detection**: Identify when two branches modified the same attribute or list index with incompatible values.
-- [x] **3-Way Merging**: Use the "Common Ancestor" node as a reference point to calculate the relative changes from both branches.
-- [x] **Merge Strategies**:
-  - [x] **Fast-Forward**: Move the parent tip directly to the child tip if no intermediate changes occurred.
-  - [x] **Resolution Policies**: Support for "Always Take A", "Always Take B", or custom callback functions to handle specific field conflicts.
-- [x] **Multi-Parent History**: Support for nodes with multiple parents, formalizing the history structure into a true Directed Acyclic Graph (DAG).
-- [x] **Implementation Note**: Updated the `StateNode` structure in Rust to support a `parents: Vec<usize>` field, enabling the engine to track the confluence of state lineages.
+### 2.4 Advanced Optimization (Deduplication & Lazy Load)
 
----
-
-## 🔗 6. Cross-Object Dependencies (Atomic State Sets)
-
-**Concept**: The ability to synchronize state travel across multiple related objects. If a "Player" reverts to a previous state, their "Inventory" and "Party" objects should optionally follow.
-
-**Potential Features**:
-
-- **Atomic Snapshots**: Create a single checkpoint that covers a group of Janus-based objects.
-- **Dependency Propagation**: Define parent-child relationships between objects so that state transitions in one trigger transitions in others.
-- **Global Multiverse**: A shared `TachyonEngine` instance managing the relative histories of an entire object graph.
+- **Complexity**: High
+- **Status**: Idea
+- **Summary**: Reducing memory footprint through state deduplication and improving performance with lazy restoration.
+- **Implementation Vision**: Content-addressable storage for deltas to deduplicate identical changes across branches. Use proxy objects in Python to lazily restore attributes only when they are accessed.
 
 ---
 
-## 💾 7. State Persistence & Serialization [✅]
+## 🌐 3. Distributed & Collaborative Systems
 
-**Concept**: Making the state DAG persistent across process restarts, enabling long-term "save games" or historical auditing.
+Synchronizing state across process or network boundaries.
 
-**Potential Features**:
+### 3.1 Distributed Tachyon
 
-- [x] **DAG Export**: Serialize the entire Node/Edge/Delta structure to JSON or a high-performance binary format (e.g., MsgPack).
-- [x] **Audit Trails**: Non-repudiable logs of object state changes for security or compliance.
-- [ ] **Incremental Loading**: Load only the "active" branch to save memory, fetching older nodes from disk on demand.
+- **Complexity**: High
+- **Status**: Idea
+- **Summary**: Synchronizing state DAGs across multiple machines for distributed simulations.
+- **Implementation Vision**: A networking layer to "ship" deltas between engine instances, likely using a leaderless replication or log-shipping model.
 
----
+### 3.2 Shared & Distributed Objects
 
-## 🔍 8. Diff-Query Language (Tachyon-QL) [⏳]
+- **Complexity**: Extreme
+- **Status**: Idea
+- **Summary**: Enabling multi-process interaction with the same tracked object across a network.
+- **Implementation Vision**: Integration of CRDTs (Conflict-free Replicated Data Types) into `engine.rs` to handle seamless merging of concurrent mutations without a central coordinator.
 
-**Concept**: A query interface to search through an object's history based on attribute values or state changes.
+### 3.3 Network-Optimized Serialization (Wire Format)
 
-**Potential Features**:
+- **Complexity**: Medium
+- **Status**: Idea
+- **Summary**: Specialized serialization (JSON, Protobuf, or high-performance binary formats) designed for efficient machine-to-machine communication across networks.
+- **Implementation Vision**: A dedicated wire format that prioritizes low-latency delta transmission and minimal payload size, enabling real-time state synchronization between distributed Janus nodes.
 
-- [x] **State Search**: `find nodes where hp < 20 and is_poisoned == True` (via `find_moments`).
-- [x] **Temporal Diffs**: `compare hp at node_A with hp at node_B` (via `diff`).
-- [ ] **Event Triggers**: "Watch" an attribute and trigger a branch creation when a specific condition is met (e.g., a "Guard" mechanism inside the engine).
+### 3.4 Distributed Patching
 
----
-
-## ✅ 9. State Schema & Validation
-
-**Concept**: Enforcing rules on what constitutes a "valid" state before it is logged to the engine.
-
-**Potential Features**:
-
-- **Type Safety**: Ensure tracked attributes maintain consistent types across branches.
-- **Invariant Checking**: Define "State Invariants" (e.g., `balance >= 0`) that must be true for a node to be considered viable.
-- **Illegal State Prevention**: Block the creation of nodes that violate business logic rules.
+- **Complexity**: Medium
+- **Status**: Idea
+- **Summary**: Exporting and importing portable "patch" files containing specific state deltas.
+- **Implementation Vision**: A serialization format that captures a subset of the DAG (a "slice") and allows it to be applied to a disparate object with a compatible base state.
 
 ---
 
-## 🎯 Target Use-Case Scenarios
+## 💾 4. Persistence & Integrity
 
-These scenarios serve as the "North Star" for Janus development, ensuring the foundation supports real-world requirements.
+Ensuring state is durable and valid.
 
-### 🤖 AI Agent "Thought-Branching"
+### 4.1 State Persistence & Serialization [✅]
+
+- **Complexity**: Medium
+- **Status**: Completed
+- **Summary**: Making the state DAG persistent across process restarts.
+- **Implementation Vision**: Serialization of nodes and deltas to JSON/Binary (via `serde` in `serde_py.rs`) for long-term auditing or "save games".
+
+### 4.2 State Schema & Validation
+
+- **Complexity**: Medium
+- **Status**: Idea
+- **Summary**: Enforcing rules on what constitutes a "valid" state before it is logged to the engine.
+- **Implementation Vision**: Pre-commit hooks in `log_op` that run validation functions (e.g., Pydantic checks or custom invariants in `engine.rs`) on the proposed state change.
+
+---
+
+## 🔍 5. Advanced Research & Querying
+
+Tools for analytical exploration of history.
+
+### 5.1 Diff-Query Language (Tachyon-QL) [⏳]
+
+- **Complexity**: Medium
+- **Status**: In-Progress
+- **Summary**: A query interface to search through history based on attribute values or temporal deltas.
+- **Implementation Vision**: A domain-specific query engine that traverses the `graph.rs` structure and filters nodes based on delta criteria (e.g., `find nodes where hp < 20`).
+
+### 5.2 Cross-Object Dependencies (Atomic State Sets)
+
+- **Complexity**: High
+- **Status**: Idea
+- **Summary**: Synchronizing state travel across multiple related objects (e.g., Player + Inventory).
+- **Implementation Vision**: A "Global Multiverse" coordinator that acts as a shared engine for a group of related objects, ensuring atomic snapshots across the entire object graph.
+
+### 5.3 Tachyon-Blame & Temporal Bisecting
+
+- **Complexity**: Medium
+- **Status**: Idea
+- **Summary**: Identifying which node last changed an attribute (Blame) or searching history for the origin of a regression (Bisect).
+- **Implementation Vision**: `blame(attr_name)` traverses the graph backwards from the current node until it finds an `UpdateAttr` operation. `bisect(predicate)` performs binary search over a linear timeline to identify where the predicate first fails.
+
+### 5.4 Semantic & Intelligent Diffing
+
+- **Complexity**: Medium/High
+- **Status**: Idea
+- **Summary**: Moving beyond raw value changes to understand the *intent* of mutations (e.g., "Sorted List", "Normalized Vector").
+- **Implementation Vision**: Higher-level operations in `models.rs` that capture the transformation logic instead of just the before/after state.
+
+### 5.5 "Bisect-as-a-Service" (Automated Regression Hunting)
+
+- **Complexity**: Medium
+- **Status**: Idea
+- **Summary**: An automated tool that takes a "broken" node and a "working" ancestor to find the origin of a regression.
+- **Implementation Vision**: A utility that performs binary search over a branch's history, running a user-provided test function at each step to identify the first failing node.
+
+### 5.6 Cross-Object Orchestration (Meta-Transactions)
+
+- **Complexity**: High
+- **Status**: Idea
+- **Summary**: Atomic transactions that span multiple Janus-tracked objects.
+- **Implementation Vision**: A "Transaction Coordinator" that locks multiple objects and logs a single synchronized "Meta-Node" across all participating engines, ensuring consistency.
+
+---
+
+## 🎨 6. Observability & UX
+
+Visualizing the multiverse.
+
+### 6.1 Visual Timeline & Graph Explorer
+
+- **Complexity**: Medium (UI focused)
+- **Status**: Idea
+- **Summary**: A dedicated UI to interactively traverse and visualize the state DAG of an object.
+- **Implementation Vision**: A React or D3-based dashboard that consumes serialized DAG data, providing "time-travel scrubbing" and side-by-side branch comparison.
+
+### 6.2 Jupyter Notebook Integration
+
+- **Complexity**: Medium
+- **Status**: Idea
+- **Summary**: A Jupyter Lab extension or widget to visualize the state DAG of a specific variable directly within a notebook cell.
+- **Implementation Vision**: A Python wrapper around the visualizer that uses `ipywidgets` or a custom MIME renderer to display the interactive graph for any Janus-tracked object.
+
+### 6.3 Reflog (Meta-History)
+
+- **Complexity**: Medium
+- **Status**: Idea
+- **Summary**: A secondary audit log that tracks all movements of the `current_node` and active branch pointers.
+- **Implementation Vision**: A hidden linear history within the engine that logs every `switch()`, `move_to()`, and `merge()` operation, allowing users to recover "lost" branches or accidental resets.
+
+### 6.4 Developer Experience (DX): Time-Travel Debugging
+
+- **Complexity**: High
+- **Status**: Idea
+- **Summary**: Integrating Janus state travel directly into IDE debuggers (e.g., VS Code, PyCharm).
+- **Implementation Vision**: A debugger extension that allows "stepping back" through Janus nodes as if they were stack frames, synchronizing the IDE's variable view with the object's historical state.
+
+---
+
+## 🤝 7. Ecosystem & Use-Cases
+
+Real-world applications and integrations.
+
+### 7.1 Native Python Types
+
+- **Complexity**: Medium
+- **Status**: Idea
+- **Summary**: Support for additional high-level Python collections that require specialized delta-tracking logic.
+- **Targeted Types**:
+  - **sets**: Tracking unique element additions and removals.
+  - **collections.deque**: Optimized tracking for double-ended queue operations (append/pop from both ends).
+  - **collections.Counter**: Tracking frequency-based updates.
+  - **collections.OrderedDict**: Preserving insertion order during state restoration.
+- **Implementation Vision**: Subclasses of `TrackedContainer` in `containers.rs` that map their native mutations to atomic deltas, similar to `TrackedList` and `TrackedDict`.
+
+---
+
+### 7.2 Community & Plugin Ecosystem
+
+- **Complexity**: Medium
+- **Status**: In-Progress
+- **Summary**: A platform for domain-specific "rules of time travel" through a robust Adapter API.
+- **Completed Plugins**:
+  - [x] **Pandas**: DataFrame-level diffing and reconstruction.
+  - [x] **NumPy**: Efficient array-level delta tracking for numeric datasets.
+- **Targeted Plugins**:
+  - [ ] **Polars**: Columnar IPC buffers; leveraging Polars' immutability for O(1) snapshots.
+  - [ ] **PyArrow**: RecordBatch-level diffing; zero-copy view tracking.
+  - [ ] **PyTorch**: Sparse index tracking or arithmetic deltas for Tensors to avoid OOM.
+  - [ ] **SQLAlchemy**: Session replay and transaction-aware state restoration.
+  - [ ] **Pydantic**: Model-level validation and sparse attribute delta logging.
+  - [ ] **Xarray**: Coordinate-aware diffing for N-dimensional datasets.
+  - [ ] **NetworkX**: Graph-operation logging (e.g., node/edge mutations).
+- **Implementation Vision**: A standard interface for libraries to define custom "Delta Strategies" for complex types where naive value-copying is inefficient or impossible.
+
+---
+
+### 7.3 AI Agent "Thought-Branching"
 
 AI Agents can use Janus to "hallucinate" or test multiple reasoning paths in parallel.
 
-- **Scenario**: An agent triggers 5 branches to solve a complex coding task. After evaluating results, it selects the most viable branch and "thaws" it, while retaining the "failed" branches as compressed context to avoid repeating mistakes in future iterations.
+- **Scenario**: An agent triggers 5 branches to solve a coding task, selects the most viable one, and keeps others as context.
 
-### 🧪 Data Science "Time Travel"
+### 7.4 Data Science "Time Travel"
 
-Data scientists can use Janus to undo experimental cells in a notebook without re-executing hours of data loading or transformation code.
+Instantly restore dataframe state after experiment failures.
 
-- **Scenario**: A user modifies a critical dataframe and realizes the transformation was incorrect. Instead of restarting the kernel, they `switch("pre-transformation")` to instantly restore the memory state.
+- **Scenario**: A user modifies a critical dataframe, realizes the error, and `switch()`es to a pre-transformation moment instead of re-running the notebook.
 
-### 📂 Non-Linear File History
+### 7.5 Non-Linear File History
 
-Managing complex file system operations where multiple "what-if" paths are explored.
+Managing complex "what-if" versioning.
 
-- **Scenario**: A document editor using Janus to manage a tree of versions, allowing a user to branch a document, try a radical edit, and then either merge it back or freeze it for later reference.
-
----
-
-## 🤝 10. Community & Plugin Ecosystem
-
-**Concept**: Janus as an open platform where the community defines the "rules of time travel" for domain-specific objects and workflows.
-
-### 10.1 Priority Plugin Roadmap
-
-Based on ecosystem prevalence and suitability for delta-tracking, the following plugins are targeted for future development:
-
-| Plugin | Key Technology | Delta Strategy |
-| :--- | :--- | :--- |
-| **Polars** | Apache Arrow | Columnar IPC buffers; leverage Polars' immutability for O(1) snapshots. |
-| **PyArrow** | Arrow IPC | RecordBatch-level diffing; zero-copy view tracking. |
-| **Pydantic** | `model_dump` | Intercept `__setattr__` on models; use `exclude_unset` for sparse delta logging. |
-| **PyTorch** | Tensors | Sparse index tracking or arithmetic deltas (`old = current - delta`) to avoid OOM. |
-| **SQLAlchemy** | Session Replay | Track ORM operations/SQL statements; "re-play" from a checkpoint on restore. |
-| **Xarray** | NetCDF/Zarr | Coordinate-aware diffing for N-dimensional datasets. |
-| **NetworkX** | Adjacency Lists | Graph-op logging (add_edge, remove_node) similar to `TrackedList`. |
-
-### 10.2 Architectural Trade-offs for Complex State
-
-- **Tensors & Large Arrays**: For libraries like PyTorch or NumPy, storing full `old_value` and `new_value` (as we do for scalars) is unsustainable. The plugin must implement a "Delta Arithmetic" approach where only the mathematical difference or changed indices are stored.
-- **External State (Databases)**: Tracking external state requires Janus to act as a **Transaction Logger**. Since Janus cannot literally "undo" a committed SQL transaction on a remote server, it must either use a local "Shadow Database" or rely on a "Checkpoint + Replay" strategy where the DB is restored to a base state and subsequent operations are re-applied to reach the desired branch node.
-- **Validation Frameworks (Pydantic)**: These plugins focus on **State Integrity**. The adapter should run validation logic during `apply_forward` to ensure that a branch switch doesn't result in an illegal object state.
+- **Scenario**: A document editor managing a tree of versions, allowing radical edits in branches that can be merged or frozen.
 
 ---
 
-## 🤝 11. Community & Plugin Ecosystem (Original Vision)
+## 🚀 8. Project Management & "Good First Issues"
 
-**Vision**:
+Non-core development tasks perfect for new contributors to the Janus ecosystem.
 
-- **User-Defined Operations**: Plugins that allow developers to define not just *what* is tracked, but *how* it is manipulated (e.g., custom logic for non-standard undo/redo).
-- **Domain Adapters**: A collaborative repository of high-performance adapters for libraries like `PyTorch`, `SQLAlchemy`, or `Xarray`.
-- **Pluggable Traversal**: Enable developers to write their own "History Manipulators"—autonomous components that use Tachyon-RS to explore state spaces in ways unique to their specific projects.
-- **Collaborative Research**: Incorporating ideas from the broader developer community to evolve the "Tachyon" engine into a universal state-management standard for Python.
+### 8.1 Documentation & Tutorials
+
+- **Complexity**: Low
+- **Status**: Idea
+- **Summary**: Improving the onboarding experience for new users and developers.
+- **Implementation Vision**: Expand the README with "Quick Start" examples, generate formal API documentation from docstrings, and create a visual "Architecture Deep-Dive" guide.
+- **Specific Tasks**:
+  - **Refine Governance**: Review and update the existing [CONTRIBUTING.md](file:///Users/eduardo.ruiz/PycharmProjects/Janus/docs/governance/CONTRIBUTING.md) for clarity.
+  - **Peer Review**: Systematically review all `docs/planning` and `docs/research` files for stale information or technical gaps.
+
+### 8.2 Testing & Benchmarking
+
+- **Complexity**: Low/Medium
+- **Status**: Idea
+- **Summary**: Ensuring the engine remains robust and performant as it grows.
+- **Implementation Vision**: Add unit tests for edge-case container operations and build a benchmarking suite to measure memory overhead and state-switch latency.
+
+### 8.3 Community Infrastructure
+
+- **Complexity**: Low
+- **Status**: Idea
+- **Summary**: Formalizing the contribution process and issue management.
+- **Implementation Vision**: Create standardized GitHub issue templates and a formal `CONTRIBUTING.md` guide covering coding standards and PR workflows.
+
+### 8.4 Example Demos & Sample Apps
+
+- **Complexity**: Medium
+- **Status**: Idea
+- **Summary**: Building small, interactive applications that showcase Janus's unique features.
+- **Implementation Vision**: Develop a collection of reference assets, such as an "Undo/Redo GUI" demo or Jupyter notebooks demonstrating multiversal data exploration.
